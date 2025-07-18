@@ -49,11 +49,11 @@ class QuantileNormalizer(BaseNormalizer):
         """
         if image.ndim == 2:
             # Single channel image
-            q5 = np.quantile(image, 0.05)
+            q5 = np.quantile(image, 0.25)
             q95 = np.quantile(image, 0.95)
         else:
             # Multi-channel image, compute per channel
-            q5 = np.quantile(image, 0.05, axis=(1, 2), keepdims=True)
+            q5 = np.quantile(image, 0.25, axis=(1, 2), keepdims=True)
             q95 = np.quantile(image, 0.95, axis=(1, 2), keepdims=True)
         
         return {
@@ -144,11 +144,11 @@ class LogQNormalizer(BaseNormalizer):
         log_img = np.log1p(image + epsilon)
 
         if image.ndim == 2:
-            q5 = np.quantile(log_img, 0.05)
-            q95 = np.quantile(log_img, 0.95)
+            q5 = np.quantile(log_img, 0.02)
+            q95 = np.quantile(log_img, 0.98)
         else:
-            q5 = np.quantile(log_img, 0.05, axis=(1, 2), keepdims=True)
-            q95 = np.quantile(log_img, 0.95, axis=(1, 2), keepdims=True)
+            q5 = np.quantile(log_img, 0.02, axis=(1, 2), keepdims=True)
+            q95 = np.quantile(log_img, 0.98, axis=(1, 2), keepdims=True)
 
         return {
             'q5': q5,
@@ -175,8 +175,10 @@ class LogQNormalizer(BaseNormalizer):
         scale = q95 - q5
         scale = np.where(scale == 0, 1, scale)
         
-        # Map q5 → -1, q95 → +1
-        normalized = 2 * (log_img - q5) / scale - 1
+        # Map q5 → 0.05, q95 → +0.95
+        normalized = (log_img - q5) / scale
+        normalized = 0.05 + 0.9 * normalized
+        normalized = np.clip(normalized, 0, 1)
         return np.float32(normalized)
 
 class ZScoreNormalizer(BaseNormalizer):
@@ -428,6 +430,50 @@ class SmoothPercentileNormalizer(BaseNormalizer):
         
         return np.float32(normalized)
     
+from scipy.interpolate import PchipInterpolator
+class MonotonicNormalizer(BaseNormalizer):
+    """
+    Smooth monotonic normalizer using PCHIP interpolation
+    based on key percentiles in the input data.
+    """
+
+    def fit(self, image: np.ndarray) -> Dict[str, Any]:
+        """
+        Fit percentile-based monotonic transform.
+
+        Args:
+            image: Input array (C, H, W) or (H, W)
+
+        Returns:
+            Dict with 'x_vals', 'y_vals'
+        """
+        # Flatten to get global percentiles
+        flat = image.flatten()
+        x_vals = np.percentile(flat, [0, 50, 85, 100])
+        y_vals = np.array([-2, -1, 1, 2])  # target mapping
+
+        return {
+            'x_vals': x_vals,
+            'y_vals': y_vals
+        }
+
+    def transform(self, image: np.ndarray, settings: Dict[str, Any]) -> np.ndarray:
+        """
+        Apply smooth monotonic transformation based on percentiles.
+
+        Args:
+            image: Input array
+            settings: Dict with 'x_vals', 'y_vals'
+
+        Returns:
+            Normalized image (float32)
+        """
+        x_vals = settings['x_vals']
+        y_vals = settings['y_vals']
+        interpolator = PchipInterpolator(x_vals, y_vals, extrapolate=True)
+        normalized = interpolator(image)
+        return np.float32(normalized)
+    
     def _apply_smooth_curve(self, channel_data: np.ndarray, p5: float, p75: float, p100: float) -> np.ndarray:
         """
         Apply the smooth interpolation curve to a single channel.
@@ -504,6 +550,7 @@ class NormalizerFactory:
         'smooth': SmoothPercentileNormalizer,
         "log": LogNormalizer,
         "loq": LogQNormalizer,
+        "monotonic": MonotonicNormalizer
     }
     
     @classmethod

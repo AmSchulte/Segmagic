@@ -17,5 +17,6 @@ dependencies = [
     "geojson",
     "openpyxl",
     "toml",
-    "tqdm"
+    "tqdm",
+    "ttach"
 ]

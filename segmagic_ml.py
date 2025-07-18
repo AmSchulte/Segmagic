@@ -14,7 +14,7 @@ import shapely
 import geojson
 import pandas as pd
 from normalize import fit_normalizer, transform_image
-        
+import ttach as tta        
 
 class Segmagic():
     def __init__(self, project_data_dict):
@@ -59,7 +59,7 @@ class Segmagic():
             max_epochs=training_params["n_epochs"], 
             precision="16-mixed",
             # see if gradient clipping of 4 is better
-            gradient_clip_val=4.0,
+            gradient_clip_val=1.0,
         )
 
         trainer.fit(
@@ -121,6 +121,11 @@ class Segmagic():
         return self.gaussian_kernel(self.kernel_size, sigma=self.kernel_size/5)
 
     def predict_image(self, image_to_predict, labels, threshold=0.6, show=False):
+        if self.ensemble:
+            tta_models = [tta.SegmentationTTAWrapper(model, tta.aliases.d4_transform(), merge_mode='mean') for model in self.models]
+        else:
+            tta_models = [tta.SegmentationTTAWrapper(self.model, tta.aliases.d4_transform(), merge_mode='mean')]
+
         STEP_SCALE = 0.5
         STEP_SIZE = int(self.kernel_size * STEP_SCALE)
         #image_to_predict = image_to_predict.transpose(2, 0, 1)
@@ -152,10 +157,11 @@ class Segmagic():
         #img = image_to_predict.load_image(image_to_predict.regions[0], (0,0,image_to_predict.image_height,image_to_predict.image_width))
         img = image_to_predict.copy()
         
-
-
         #padding image
         normalized_img = np.pad(img, ((0,0), (int(y_padding/2), math.ceil(y_padding/2)), (int(x_padding/2), math.ceil(x_padding/2))), mode="edge")
+
+        # normalize image
+        normalized_img = (normalized_img - 0.5) / 0.5
 
         pbar = tqdm(total=x_steps * y_steps)
         with torch.no_grad():
@@ -172,7 +178,7 @@ class Segmagic():
                     img_tile = torch.from_numpy(img_tile).unsqueeze(0)
                     if self.ensemble:
                         outputs = []
-                        for model in self.models:
+                        for model in tta_models:
                             pred_m = model(img_tile.cuda())
                             outputs.append(pred_m)
                             
@@ -180,7 +186,7 @@ class Segmagic():
                         #_, pred = torch.max(ensemble_output, 1)
                         
                     else:
-                        pred = self.model(img_tile.cuda())
+                        pred = tta_models[0](img_tile.cuda())
 
                     pred = pred.squeeze(0).sigmoid().cpu().numpy()
                     
@@ -254,7 +260,6 @@ class Segmagic():
         for i in range(len(data.test_data)):
             image_to_predict = data.test_data[i]
             
-            
             test_image = image_to_predict.load_image(image_to_predict.regions[0], (0,0,image_to_predict.image_height,image_to_predict.image_width))
             
             predicted_mask, uncertainty = self.predict_image(test_image, data.labels, show=False)
@@ -313,7 +318,7 @@ class Segmagic():
         self.load_model()
 
         for filepath in tqdm(filepaths):
-           # ensure the filename ends with .tif of tiff
+            # ensure the filename ends with .tif of tiff
             filename = Path(filepath).name
 
             image_to_predict = tiff.imread(filepath)
@@ -325,7 +330,6 @@ class Segmagic():
             norm_settings = self.project_data_dict["dataset"]["normalization_settings"]
             norm_settings = fit_normalizer(image_to_predict, norm_method)
             image_to_predict = transform_image(image_to_predict, norm_settings, norm_method)
-           
 
             predicted_mask, uncertainty = self.predict_image(image_to_predict, labels, show=show)
             tiff.imwrite(f"{folder_saveto}/{filename}", predicted_mask, metadata={'labels': labels})

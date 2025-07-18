@@ -8,6 +8,7 @@ import torch
 import pickle
 import matplotlib.pyplot as plt
 from normalize import fit_normalizer, transform_image
+import random
 
 class TrainImage():
     def __init__(self, info_dict):
@@ -26,7 +27,7 @@ class TrainImage():
         if self.info_dict["dataset"]["use_regions"]:
             region_coords = [f['geometry']['coordinates'][0] for f in self.info_dict['features']if f['properties']['classification']['name'] == 'Region*']
         else:
-            region_coords = [[[0, 0],[0, info_dict["metadata"]["height"]],[info_dict["metadata"]["height"], info_dict["metadata"]["width"]], [info_dict["metadata"]["width"],0], [0, 0]]]
+            region_coords = [[[0, 0],[0, info_dict["metadata"]["width"]],[info_dict["metadata"]["width"], info_dict["metadata"]["height"]], [info_dict["metadata"]["height"],0], [0, 0]]]
         
         
         self.regions.extend(
@@ -59,6 +60,7 @@ class TrainImage():
         self.info_dict["metadata"]["normalization_method"] = norm_method
         self.info_dict["metadata"]["normalization_settings"] = norm_settings
     
+
 
         self.polygons = {c: [f['geometry']['coordinates'] for f in self.info_dict['features'] if f['properties']['classification']['name'] == c] for c in self.labels}
         self.load_mask()
@@ -229,9 +231,46 @@ class TrainImage():
         # get a random region
         region = np.random.choice(self.regions)
         
-        # get a random position within the region
-        x = np.random.randint(region['x'], region['x']+region['w']-width)
-        y = np.random.randint(region['y'], region['y']+region['h']-height)
+        # Find positive mask positions (any channel with True values)
+        # Combine all mask channels to find any positive area
+
+        if random.randint(0, 100) < 25:
+            x = np.random.randint(region['x'], region['x']+region['w']-width)
+            y = np.random.randint(region['y'], region['y']+region['h']-height)
+        else:
+            combined_mask = np.any(region["mask"], axis=0)
+            
+            # Get coordinates of all positive mask positions
+            positive_coords = np.where(combined_mask)
+            
+            if len(positive_coords[0]) == 0:
+                # If no positive mask found, fall back to random sampling
+                x = np.random.randint(region['x'], region['x']+region['w']-width)
+                y = np.random.randint(region['y'], region['y']+region['h']-height)
+            else:
+                # Select a random positive position
+                idx = np.random.randint(len(positive_coords[0]))
+                center_y, center_x = positive_coords[0][idx], positive_coords[1][idx]
+                
+                # Sample around the positive position (within 1/2 width and height)
+                half_width = width * 2
+                half_height = height * 2
+                
+                # Calculate sampling bounds around the center position
+                min_x = max(region['x'], region['x'] + center_x - half_width)
+                max_x = min(region['x'] + region['w'] - width, region['x'] + center_x + half_width - width)
+                min_y = max(region['y'], region['y'] + center_y - half_height)
+                max_y = min(region['y'] + region['h'] - height, region['y'] + center_y + half_height - height)
+                
+                # Ensure valid bounds
+                if max_x < min_x:
+                    max_x = min_x
+                if max_y < min_y:
+                    max_y = min_y
+                
+                # Sample position around the positive area
+                x = np.random.randint(min_x, max_x + 1) if max_x >= min_x else min_x
+                y = np.random.randint(min_y, max_y + 1) if max_y >= min_y else min_y
 
         return (x, y, width, height), region
 
@@ -276,7 +315,10 @@ class TrainImage():
 class ImageDataset(torch.utils.data.Dataset):
     def __init__(self, data_dict, size=(128, 128), transforms=None, augmentations=None, repeats=64):
         self.data_dict = data_dict
-        self.size = size
+        # increase the size by 50% to allow for some padding
+        # this will be removed after the augmentation
+        # and will prevent transformations to have padding issues
+        self.size = np.int_(np.array(size) * 1.5) 
         # aug and transforms are from albumentations
         self.transform = transforms
         self.augmentation = augmentations

@@ -97,13 +97,15 @@ class Model(lit.LightningModule):
         return loss
     
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
+        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-1)
+        
+        # FIXME: put this into the toml file
         if False:
             sched = torch.optim.lr_scheduler.OneCycleLR(
                 opt,
                 max_lr=self.lr,
                 steps_per_epoch=self.steps_per_epoch,
-                epochs=self.num_epochs,
+                epochs=self.num_epochs4,
             )
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt,
@@ -126,10 +128,10 @@ class Model(lit.LightningModule):
         result = self.tml.on_batch_end()
         
         self.epoch_count += 1
-        current_valid_f1 = result['val_f1_micro']
+        current_valid_f1 = result['val_f1_soft_micro']
         if current_valid_f1 > self.best_valid_f1:
             self.best_valid_f1 = current_valid_f1
-            tqdm.write(f"\nSaving model for epoch {self.epoch_count} for best validation F1: {self.best_valid_f1}")
+            tqdm.write(f"\nSaving model for epoch {self.epoch_count} for best soft validation F1: {self.best_valid_f1}")
             #torch.save(self.model.state_dict(), 'output/best_model.pth')
             torch.save(self.model, self.model_path)
             result_df = pd.DataFrame.from_dict(result, orient='index')

@@ -4,3 +4,7 @@ wandb
 
 *.json
 /cache/
+*.pkl
+*.pth
+*.xlsx
+/models/
