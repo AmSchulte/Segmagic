@@ -1,0 +1,21 @@
+[project]
+name = "segmagic"
+version = "0.1.0"
+dependencies = [
+    "torch",
+    "segmentation-models-pytorch",
+    "scikit-image",
+    "matplotlib",
+    "scikit-learn",
+    "albumentations",
+    "numpy",
+    "pytorch-lightning",
+    "wandb",
+    "einops",
+    "pandas",
+    "shapely",
+    "geojson",
+    "openpyxl",
+    "toml",
+    "tqdm"
+]

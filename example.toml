@@ -1,0 +1,39 @@
+# Segmagic Configuration File
+# This file contains all configurable parameters for training and inference
+
+[general]
+name = "NFmouse_Segmagic"  # Project name for logging and organization
+description = "Neurofilament segmentation in mouse tissue"
+
+
+[data]
+base_path = "L:/Robert Blum/GPU PC Backup/Annotations/NF_mouse/Segmagic"
+model_folder = "L:/Robert Blum/GPU PC Backup/Annotations/NF_mouse/Segmagic/models"  # Folder to save trained models
+
+[dataset]
+labels = ['NF']
+out_classes = ["cell"]
+mode = "brightfield, fluorescence"
+max_signal = 65536
+different_pages = false
+one_channel = true
+downscale = 1
+channels = [0]
+use_regions = false
+kernel_size = 256  # Size of the kernel for image processing
+normalization_method = "q5_q95"  # Method for normalizing images
+normalization_settings = {}  # Settings for normalization
+
+[training.dataloader]
+batch_size = 16  # Number of samples per batch
+num_workers = 4  # Number of workers for data loading
+pin_memory = true  # Pin memory for faster data transfer to GPU
+drop_last = true  # Drop the last incomplete batch
+persistent_workers = true  # Keep data loading workers alive
+
+[validation.dataloader]
+batch_size = 16  # Number of samples per batch
+num_workers = 4  # Number of workers for data loading
+pin_memory = true  # Pin memory for faster data transfer to GPU
+drop_last = true  # Drop the last incomplete batch
+persistent_workers = true  # Keep data loading workers alive

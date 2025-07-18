@@ -12,7 +12,19 @@ import pandas as pd
 
 
 class Model(lit.LightningModule):
-    def __init__(self, model_params, n_epochs=10, lr=1e-4, spe=100, num_epochs=100, labels=['cell'], model_path=['model/best_model.pth'], wandb_log=False, project=None, entity=None):
+    def __init__(
+            self, 
+            model_params, 
+            n_epochs=10, 
+            lr=1e-4, 
+            spe=100, 
+            num_epochs=100, 
+            labels=['cell'], 
+            model_path=['model/best_model.pth'], 
+            wandb_log=False, 
+            project=None, 
+            entity=None
+    ):
         super().__init__()
         self.model = SCUnet(**model_params)
         self.steps_per_epoch = spe
@@ -31,21 +43,10 @@ class Model(lit.LightningModule):
                 reduction="sum",
                 reduced_threshold = 0.2
             ),
-            "perceptual": PerceptualLoss(),
-            "shit_loss": PhilsCrazyLoss(
-                PerceptualLoss(), 
-                smp.losses.FocalLoss(
-                    mode="multilabel",
-                    gamma=2,
-                    alpha=0.75,
-                    reduction="mean",
-                    reduced_threshold = 0.2
-                )
-            )
-            # combo loss, tversky, dice, ...
+            "weighted_focal": WeightedFocalLoss(),
         }
         
-        self.loss = losses["focal"]
+        self.loss = losses["weighted_focal"]
         # self.loss = losses["shit_loss"]
         self.n_epochs = n_epochs
         self.lr = lr
@@ -59,9 +60,10 @@ class Model(lit.LightningModule):
         return self.model(x)
     
     def step(self, batch):
-        x, y = batch
+        x, y, w = batch
+        
         y_hat = self(x).contiguous()
-        loss = self.loss(y_hat, y)
+        loss = self.loss(y_hat, y, w)
         p = y_hat.view([y.shape[0], 4, -1]).sigmoid().cpu().detach().numpy()
         l = y.view([y.shape[0], 4, -1]).cpu().detach().numpy()
         return loss, p, l
@@ -96,11 +98,17 @@ class Model(lit.LightningModule):
     
     def configure_optimizers(self):
         opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-2)
-        sched = torch.optim.lr_scheduler.OneCycleLR(
+        if False:
+            sched = torch.optim.lr_scheduler.OneCycleLR(
+                opt,
+                max_lr=self.lr,
+                steps_per_epoch=self.steps_per_epoch,
+                epochs=self.num_epochs,
+            )
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt,
-            max_lr=self.lr,
-            steps_per_epoch=self.steps_per_epoch,
-            epochs=self.num_epochs,
+            T_max=self.steps_per_epoch * self.num_epochs,
+            eta_min=self.lr / 10_000
         )
 
         return {
@@ -127,24 +135,33 @@ class Model(lit.LightningModule):
             result_df = pd.DataFrame.from_dict(result, orient='index')
             result_df.to_excel(self.model_path[:-3]+'xlsx')
 
-class PerceptualLoss(nn.Module):
-    def __init__(self):
-        super(PerceptualLoss, self).__init__()
-        self.mse = nn.MSELoss()
-        self.vgg = nn.Sequential(*list(torchvision.models.vgg11(pretrained=True).features.children())[:16]).cuda()
-        self.vgg.eval()
-        for param in self.vgg.parameters():
-            param.requires_grad = False
 
-    def forward(self, x, y):
-        return self.mse(self.vgg(x.sigmoid()), self.vgg(y))
-
-class PhilsCrazyLoss(nn.Module):
+class ComboLoss(nn.Module):
     def __init__(self, loss_a, loss_b):
-        super(PhilsCrazyLoss, self).__init__()
+        super().__init__()
         self.loss_a = loss_a
         self.loss_b = loss_b
     
     def forward(self, x, y): 
-        return self.loss_a(x, y) * self.loss_b(x, y)    
-    
+        return self.loss_a(x, y) + self.loss_b(x, y)    
+
+class WeightedFocalLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.focal_loss = smp.losses.FocalLoss(
+                mode="multilabel",
+                gamma=2,
+                alpha=0.75,
+                reduction=None,
+                reduced_threshold = 0.2
+            )
+
+    def forward(self, x, y, weights):
+        # apply blur to the outline
+
+        focal_loss = self.focal_loss(x, y)
+        
+        # apply weights
+        focal_loss = focal_loss * weights.flatten()
+
+        return focal_loss.sum()

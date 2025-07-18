@@ -7,26 +7,26 @@ import tifffile
 import torch
 import pickle
 import matplotlib.pyplot as plt
+from normalize import fit_normalizer, transform_image
 
 class TrainImage():
     def __init__(self, info_dict):
-        self.info_dict = info_dict
+        # make a copy of the info_dict to avoid modifying the original
+        self.info_dict = {**info_dict}
 
         self.out_channels = [c['name'] for c in self.info_dict['metadata']['channels'] if not c['name'].startswith('p_')]
-        if self.info_dict["metadata"]["one_channel"]:
+        if self.info_dict["dataset"]["one_channel"]:
             self.out_channels = [self.out_channels[0]]
-        self.labels = self.info_dict["labels"]
+        self.labels = self.info_dict["dataset"]["labels"]
     
-        self.in_channels = self.info_dict["metadata"]["channels"]
+        self.in_channels = self.info_dict["dataset"]["channels"]
 
         self.regions = []
         
-        
-        
-        if self.info_dict["metadata"]["use_regions"]:
+        if self.info_dict["dataset"]["use_regions"]:
             region_coords = [f['geometry']['coordinates'][0] for f in self.info_dict['features']if f['properties']['classification']['name'] == 'Region*']
         else:
-            region_coords = [[[0, 0],[0, info_dict["metadata"]["width"]],[info_dict["metadata"]["width"], info_dict["metadata"]["height"]], [info_dict["metadata"]["height"],0], [0, 0]]]
+            region_coords = [[[0, 0],[0, info_dict["metadata"]["height"]],[info_dict["metadata"]["height"], info_dict["metadata"]["width"]], [info_dict["metadata"]["width"],0], [0, 0]]]
         
         
         self.regions.extend(
@@ -49,6 +49,17 @@ class TrainImage():
             self.image_width = max(max(p[0] for p in region['coord']) for region in self.regions)
             self.image_height = max(max(p[1] for p in region['coord']) for region in self.regions)
 
+        whole_image = self.load_whole_image()
+        
+        # get normalization method from config, default to q5_q95
+        norm_method = self.info_dict["dataset"].get("normalization_method", "q5_q95")
+        
+        # fit normalizer and store settings
+        norm_settings = fit_normalizer(whole_image, norm_method)
+        self.info_dict["metadata"]["normalization_method"] = norm_method
+        self.info_dict["metadata"]["normalization_settings"] = norm_settings
+    
+
         self.polygons = {c: [f['geometry']['coordinates'] for f in self.info_dict['features'] if f['properties']['classification']['name'] == c] for c in self.labels}
         self.load_mask()
 
@@ -66,7 +77,7 @@ class TrainImage():
         filename_hash += hashlib.sha256(str(region['h']).encode('utf-8')).hexdigest()
 
         # also include downscale
-        filename_hash += hashlib.sha256(str(self.info_dict["metadata"]["downscale"]).encode('utf-8')).hexdigest()
+        filename_hash += hashlib.sha256(str(self.info_dict["dataset"]["downscale"]).encode('utf-8')).hexdigest()
         
         # make hash shorter to use it as filename using sha1
         filename_hash = hashlib.sha1(filename_hash.encode('utf-8')).hexdigest()
@@ -101,6 +112,27 @@ class TrainImage():
 
         return region
     
+    def load_whole_image(self):
+        # load the whole image from tif file
+        with tifffile.TiffFile(self.info_dict["path"]) as tif:
+            if self.info_dict["dataset"]["different_pages"]:
+                # if labels correspond to each image channel
+                image = tif.asarray().transpose(2, 0, 1)
+            else:
+                # if just one image channel or RGB
+                image = tif.asarray().transpose(2, 0, 1)
+
+        # downscale if needed
+        if self.info_dict["dataset"]["downscale"] > 1:
+            image = skimage.transform.rescale(
+                image,
+                (1, 1 / self.info_dict["dataset"]["downscale"], 1 / self.info_dict["dataset"]["downscale"]),
+                preserve_range=True,
+                anti_aliasing=True
+            )
+
+        return image
+
     def load_region(self, region):
         # try cached region first
         if l_cached := self.load_region_cache(self.info_dict, region) is not None:
@@ -108,14 +140,15 @@ class TrainImage():
 
         with tifffile.TiffFile(self.info_dict["path"]) as tif:
             # if labels correspond to each image channel
-            if self.info_dict["metadata"]["different_pages"]:
+            if self.info_dict["dataset"]["different_pages"]:
                 for i, c in enumerate(self.labels):
                     region["image"][i, :, :] = tif.asarray()[i,:,:][region['y']:region['y']+region['h'], region['x']:region['x']+region['w']]
             # if just one image channel or RGB
             else:
+                
                 region["image"] = tif.asarray()[region['y']:region['y'] + region['h'], region['x']:region['x'] + region['w']]
+                
                 region["image"] = region["image"].transpose(2, 0, 1)
-            
             # check if channels are in the correct order
             if region["image"].shape[0] != len(self.in_channels):
                 #region["image"] = region["image"].transpose(2, 0, 1)
@@ -123,25 +156,25 @@ class TrainImage():
                 
 
         # downscale if needed
-        if self.info_dict["metadata"]["downscale"] > 1:
+        if self.info_dict["dataset"]["downscale"] > 1:
             # use bilinear resize for image, and nearest neighbor for mask
             region["image"] = skimage.transform.rescale(
                 region["image"],
-                (1, 1 / self.info_dict["metadata"]["downscale"], 1 / self.info_dict["metadata"]["downscale"]),
+                (1, 1 / self.info_dict["dataset"]["downscale"], 1 / self.info_dict["dataset"]["downscale"]),
                 preserve_range=True,
                 anti_aliasing=True
             )
 
             region["mask"] = skimage.transform.rescale(
                 region["mask"],
-                (1, 1 / self.info_dict["metadata"]["downscale"], 1 / self.info_dict["metadata"]["downscale"]),
+                (1, 1 / self.info_dict["dataset"]["downscale"], 1 / self.info_dict["dataset"]["downscale"]),
                 order=0
             ).astype(np.bool_)
 
-            region["h"] = int(region["h"] / self.info_dict["metadata"]["downscale"])
-            region["w"] = int(region["w"] / self.info_dict["metadata"]["downscale"])
-            region['x'] = int(region['x'] / self.info_dict["metadata"]["downscale"])
-            region['y'] = int(region['y'] / self.info_dict["metadata"]["downscale"])
+            region["h"] = int(region["h"] / self.info_dict["dataset"]["downscale"])
+            region["w"] = int(region["w"] / self.info_dict["dataset"]["downscale"])
+            region['x'] = int(region['x'] / self.info_dict["dataset"]["downscale"])
+            region['y'] = int(region['y'] / self.info_dict["dataset"]["downscale"])
 
         # cache the region
         self.cache_region(region)
@@ -152,31 +185,41 @@ class TrainImage():
         # for each region, create a mask        
         full_mask = np.zeros((len(self.labels), self.image_height, self.image_width), dtype=np.bool_)
         
-
+        # print(1, full_mask.shape, self.image_height, self.image_width)
         for i, c in enumerate(self.labels):
             for poly in self.polygons[c]:
                 if len(poly) == 1:
                     full_mask[i, :, :] += skimage.draw.polygon2mask(full_mask[i, :, :].shape, [(p[1], p[0]) for p in poly[0]])
+                if len(poly) > 1:
+                    for polym in poly:
+                        full_mask[i, :, :] ^= skimage.draw.polygon2mask(full_mask[i, :, :].shape, [(p[1], p[0]) for p in polym[0]])
+                    # if there are multiple polygons, we need to combine them
+                    # this is the case for example with Multipolygons
+                    # we can use skimage.draw.polygon2mask to create a mask for each polygon
+                    # and then combine them using XOR
+
                 else:
                     try:
+                        
                         full_mask[i, :, :] += skimage.draw.polygon2mask(full_mask[i, :, :].shape, [(p[1], p[0]) for p in poly[0]])
                     except ValueError as e:
                         # no Polygon here, for example does not work with Multipolygons
                         # maybe implement method here to work with other shapes
                         print(poly)
                         raise ValueError from e
-                    for p in poly[1:]:
-                        full_mask[i, :, :] ^= skimage.draw.polygon2mask(full_mask[i, :, :].shape, [(p[1], p[0]) for p in p])
-        
-
+        # make sure the mask is boolean
+        #full_mask = full_mask*1
+                    
         for region in self.regions:
             # height, width --> largest x - smallest x, largest y - smallest y
+            
             region['x'] = min(p[0] for p in region['coord'])
             region['y'] = min(p[1] for p in region['coord'])
             region['w'] = max(p[0] for p in region['coord']) - region['x']
             region['h'] = max(p[1] for p in region['coord']) - region['y']
-
+            
             region["mask"] = full_mask[:, region['y']:region['y']+region['h'], region['x']:region['x'] + region['w']]
+            
             region["image"] = np.zeros((len(self.in_channels), region['h'], region['w']), dtype=np.int16)
 
             # load the region
@@ -192,8 +235,18 @@ class TrainImage():
 
         return (x, y, width, height), region
 
+    def pad_if_needed(self, img, h, w):
+        # pad to h, w if needed
+        if img.shape[1] < h:
+            img = np.pad(img, ((0, 0), (0, h - img.shape[1]), (0, 0)), mode='constant')
+
+        if img.shape[2] < w:
+            img = np.pad(img, ((0, 0), (0, 0), (0, w - img.shape[2])), mode='constant')
+    
+        return img
+    
     def load_image(self, region, position):
-        x, y, w, h = position
+        x, y, h, w = position
         
         # make sure we don't go out of bounds
         # _w = min(w, self.image_width - x)
@@ -201,25 +254,27 @@ class TrainImage():
         r_x = x - region['x']
         r_y = y - region['y']
         image = region["image"][:, r_y:r_y + h, r_x:r_x + w]
-    
-        # pad to h, w if needed
-        if image.shape[1] < h:
-            image = np.pad(image, ((0, 0), (0, h - image.shape[1]), (0, 0)), mode='constant')
+        image = self.pad_if_needed(image, h, w)
 
-        if image.shape[2] < w:
-            image = np.pad(image, ((0, 0), (0, 0), (0, w - image.shape[2])), mode='constant')
+        # normalize image
+        norm_method = self.info_dict["metadata"]["normalization_method"]
+        norm_settings = self.info_dict["metadata"]["normalization_settings"]
+        image = transform_image(image, norm_settings, norm_method)
 
         return image
     
     def get_mask(self, region, position):
-        x, y, w, h = position
+        x, y, h, w = position
         dx = x - region['x']
         dy = y - region['y']
-        return region["mask"][:, dy:dy + h, dx:dx + w]
+        mask = region["mask"][:, dy:dy + h, dx:dx + w]
+        mask = self.pad_if_needed(mask, h, w)
+        mask = mask.astype(np.uint8)
 
+        return mask
 
-class ImageDataLoader(torch.utils.data.Dataset):
-    def __init__(self, data_dict, size=(128, 128), transforms=None, augmentations=None, repeats=16):
+class ImageDataset(torch.utils.data.Dataset):
+    def __init__(self, data_dict, size=(128, 128), transforms=None, augmentations=None, repeats=64):
         self.data_dict = data_dict
         self.size = size
         # aug and transforms are from albumentations
@@ -229,15 +284,30 @@ class ImageDataLoader(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.data_dict) * self.repeats
+    
+    def get_weights(self, mask):
+        import numpy as np
+        from skimage.morphology import binary_dilation, binary_erosion, disk
+        from scipy.ndimage import uniform_filter
+
+        weights = np.zeros_like(mask, dtype=np.float32)
+
+        for i in range(mask.shape[0]):
+            weights[i] = mask[i] > 0.5
+            outline = (binary_dilation(mask[i], footprint=disk(1)) ^ binary_erosion(mask[i], footprint=disk(3))).astype(np.float32)
+            outline = outline * 0.5
+            # apply blur
+            outline = uniform_filter(outline, size=3, mode='constant', cval=0.0)
+            weights[i] = 1- outline
+
+        return weights
         
     def __getitem__(self, index):
         index = index % len(self.data_dict)
-
         pos, region = self.data_dict[index].sample_position(self.size[0], self.size[1])
         image = self.data_dict[index].load_image(region, pos)
         mask = self.data_dict[index].get_mask(region, pos)
 
-        image = np.float32(image / 2**8)
         # expects channels last
         image = np.transpose(image, (1, 2, 0))
         mask = np.transpose(mask, (1, 2, 0))
@@ -252,5 +322,5 @@ class ImageDataLoader(torch.utils.data.Dataset):
 
         image = np.transpose(image, (2, 0, 1))
         mask = np.transpose(mask, (2, 0, 1))
-
-        return image, np.float32(mask)
+        weight = self.get_weights(mask)
+        return image, np.float32(mask), weight

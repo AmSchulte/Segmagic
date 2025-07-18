@@ -7,36 +7,45 @@ import numpy as np
 import matplotlib.pyplot as plt
 import glob
 import tifffile as tiff
-import os
+from pathlib import Path
 import cv2 
 from shapely.geometry import Polygon
 import shapely
 import geojson
 import pandas as pd
+from normalize import fit_normalizer, transform_image
         
 
 class Segmagic():
-    def __init__(self, model_folder=''):
-        self.model_folder = model_folder + '/model'
-        try:
-            os.mkdir(self.model_folder)
-        except:
-            pass
+    def __init__(self, project_data_dict):
+        self.project_data_dict = project_data_dict
+        self.model_folder = project_data_dict["data"]["model_folder"]
+        self.kernel_size = self.project_data_dict["dataset"]["kernel_size"]
+        
+        # create model folder if it does not exist
+        Path(self.model_folder).mkdir(parents=True, exist_ok=True)
+        
         self.model_path = self.model_folder +'/best_model.pth'
         self.ensemble = False
     
-    def train_model(self, data, encoder_name="efficientnet-b5", epochs=50, lr=3e-4, wandb_log=False, project=None, entity=None):
+    def train_model(self, data, encoder_name="efficientnet-b5", epochs=100, lr=3e-4, wandb_log=False, project=None, entity=None):
 
-        model_params = {"encoder_name":encoder_name, 
-                        "in_channels":len(data.train_data[0].in_channels), 
-                        "classes":len(data.labels),
-                        "activation":None}
-        training_params = {"n_epochs": epochs,
-                        "lr": lr, 
-                        "spe":len(data.train_dl),
-                        "num_epochs": epochs,
-                        "labels":data.labels,
-                        "model_path":self.model_path}
+        model_params = {
+            "encoder_name":encoder_name, 
+            "in_channels":len(data.train_data[0].in_channels), 
+            "classes":len(data.labels),
+            "activation":None
+        }
+        
+        training_params = {
+            "n_epochs": epochs,
+            "lr": lr, 
+            "spe":len(data.train_dl),
+            "num_epochs": epochs,
+            "labels":data.labels,
+            "model_path":self.model_path
+        }
+
         self.model = Model(
             model_params,
             **training_params,
@@ -48,13 +57,16 @@ class Segmagic():
         trainer = lit.Trainer(
             accelerator="auto",
             max_epochs=training_params["n_epochs"], 
-            precision=16,
+            precision="16-mixed",
             # see if gradient clipping of 4 is better
-            gradient_clip_val=1.0,
+            gradient_clip_val=4.0,
         )
 
-        trainer.fit(self.model, data.train_dl, data.valid_dl)
-    
+        trainer.fit(
+            self.model, 
+            data.train_dl, data.valid_dl
+        )
+
     def train_model_ensemble(self, model_n, data, encoder_name="efficientnet-b5", epochs=50, lr=3e-4, wandb_log=False, project=None, entity=None):
         for i in range(model_n):
             data.train_test_split(test_ratio=0.1, valid_ratio=0.2, random=None)
@@ -66,26 +78,24 @@ class Segmagic():
         
     def load_model(self):
         filepaths = glob.glob(f"{self.model_folder}/*.pth")
-        if len(filepaths) > 0:
+        if len(filepaths) > 1:
             self.ensemble = True
             self.models = []
+            print(f"Loading models for ensemble")
             for filepath in filepaths:
-                model = torch.load(filepath)
-                model.eval()
-                model.cuda()
-                self.models.append(model)
+                
+                if 'SCUnet_model' in filepath:
+                    model = torch.load(filepath, weights_only=False)
+                    model.eval()
+                    model.cuda()
+                    self.models.append(model)
 
             #self.fmodel, self.params, self.buffers = combine_state_for_ensemble(self.models)
         else:
-            self.model = torch.load(filepaths[0])
+            self.model = torch.load(filepaths[0], weights_only=False)
             self.model.eval()
             self.model.cuda()
-
-    def fmodel(self, params, buffers, x):
-        
-        return functional_call(self.base_model, (params, buffers), (x,))
-
-        
+            print(f"Loaded model from {filepaths[0]}")
 
     
     # from http://www.adeveloperdiary.com/data-science/computer-vision/applying-gaussian-smoothing-to-an-image-using-python-from-scratch/
@@ -110,15 +120,14 @@ class Segmagic():
     def weight_function(self):
         return self.gaussian_kernel(self.kernel_size, sigma=self.kernel_size/5)
 
-    def predict_image(self, image_to_predict, labels, threshold=0.6, kernel_size=256, show=False):
-        self.kernel_size = kernel_size
+    def predict_image(self, image_to_predict, labels, threshold=0.6, show=False):
         STEP_SCALE = 0.5
         STEP_SIZE = int(self.kernel_size * STEP_SCALE)
         #image_to_predict = image_to_predict.transpose(2, 0, 1)
         image_width = image_to_predict.shape[2]
         image_height = image_to_predict.shape[1]
 
-        self.load_model()
+        #self.load_model()
         x_padding = STEP_SIZE - image_width % STEP_SIZE
         y_padding = STEP_SIZE - image_height % STEP_SIZE
 
@@ -142,10 +151,11 @@ class Segmagic():
         # reading image, adjust code here for new images
         #img = image_to_predict.load_image(image_to_predict.regions[0], (0,0,image_to_predict.image_height,image_to_predict.image_width))
         img = image_to_predict.copy()
-        img = np.float32(img / 2**8)
+        
+
 
         #padding image
-        img = np.pad(img, ((0,0), (int(y_padding/2), math.ceil(y_padding/2)), (int(x_padding/2), math.ceil(x_padding/2))), mode="edge")
+        normalized_img = np.pad(img, ((0,0), (int(y_padding/2), math.ceil(y_padding/2)), (int(x_padding/2), math.ceil(x_padding/2))), mode="edge")
 
         pbar = tqdm(total=x_steps * y_steps)
         with torch.no_grad():
@@ -156,7 +166,7 @@ class Segmagic():
                     x1 = self.kernel_size
                     y1 = self.kernel_size
                     
-                    img_tile = img[:,y0:y0+y1, x0:x0+x1]
+                    img_tile = normalized_img[:,y0:y0+y1, x0:x0+x1]
                     
                 
                     img_tile = torch.from_numpy(img_tile).unsqueeze(0)
@@ -201,12 +211,14 @@ class Segmagic():
         predicted_mask = np.uint8((predicted_mask>threshold)*255)
 
         if show:
+            # conver image to uint8 for visualization
+            img = np.uint8(image_to_predict*255)
             for label in range(len(labels)):
                 # make subfigures and also show the uncertainty
 
                 fig, axs = plt.subplots(1,2, figsize=(10,5))
                 axs[0].set_title('Prediction')
-                axs[0].imshow(image_to_predict[0,:,:], cmap='gray')
+                axs[0].imshow(img[0,:,:], cmap='gray')
                 axs[0].imshow(predicted_mask[..., label], alpha=0.4, cmap="inferno")
 
                 axs[1].set_title('Uncertainty')
@@ -218,25 +230,34 @@ class Segmagic():
     def get_dice(self, img1, img2):
         img1 = np.asarray(img1).astype(bool)
         img2 = np.asarray(img2).astype(bool)
+
+        if img1.shape != img2.shape:
+            # we seem to have padded, so we need to crop
+            min_shape = np.minimum(img1.shape, img2.shape)
+            img1 = img1[:min_shape[0], :min_shape[1]]
+            img2 = img2[:min_shape[0], :min_shape[1]]
+
         intersection = np.logical_and(img1, img2)
         return 2. * intersection.sum() / (img1.sum() + img2.sum())
             
     def test_images(self, data):
-        try:
-            os.mkdir(data.base_path+'/Testing')
-            os.mkdir(data.base_path+'/Testing/images')
-            os.mkdir(data.base_path+'/Testing/masks_ann')
-            os.mkdir(data.base_path+'/Testing/masks_pred')
-            os.mkdir(data.base_path+'/Testing/masks_uncertainty')
-        except:
-            pass
+        Path(data.base_path+'/Testing/images').mkdir(parents=True, exist_ok=True)
+        Path(data.base_path+'/Testing/masks_ann').mkdir(parents=True, exist_ok=True)
+        Path(data.base_path+'/Testing/masks_pred').mkdir(parents=True, exist_ok=True)
+        Path(data.base_path+'/Testing/masks_uncertainty').mkdir(parents=True, exist_ok=True)
+        
 
         results = {'image_name':[], 'Dice_score':[], 'Uncertainty_score':[]}
+        # load model
+        self.load_model()
+        
         for i in range(len(data.test_data)):
             image_to_predict = data.test_data[i]
             
+            
             test_image = image_to_predict.load_image(image_to_predict.regions[0], (0,0,image_to_predict.image_height,image_to_predict.image_width))
-            predicted_mask, uncertainty = self.predict_image(test_image, data.labels, kernel_size=256, show=False)
+            
+            predicted_mask, uncertainty = self.predict_image(test_image, data.labels, show=False)
             
             img = image_to_predict.load_image(image_to_predict.regions[0], (0,0,image_to_predict.image_height,image_to_predict.image_width))
             mask = image_to_predict.get_mask(image_to_predict.regions[0], (0,0,image_to_predict.image_height,image_to_predict.image_width))
@@ -255,6 +276,9 @@ class Segmagic():
                 uncertainty_score = np.mean(uncertainty[..., label][predicted_mask[..., label]>0])
                 results['Dice_score'].append(dice)
                 results['Uncertainty_score'].append(uncertainty_score)
+
+                # conver image to uint8 for visualization
+                img = np.uint8(img*255)
 
                 fig, axs = plt.subplots(1,3, figsize=(15,5))
 
@@ -278,21 +302,30 @@ class Segmagic():
         folder_saveto = folder_path + '_pred/masks'
         folder_saveto_json = folder_path + '_pred/jsons'
         folder_saveto_uncertainty = folder_path + '_pred/uncertainty'
-        try:
-            os.mkdir(folder_path + '_pred')
-            os.mkdir(folder_saveto)
-            os.mkdir(folder_saveto_json)
-            os.mkdir(folder_saveto_uncertainty)
-        except:
-            pass
-        filepaths = glob.glob(f"{folder_path}/*.tif")
+
+        Path(folder_path + '_pred').mkdir(parents=True, exist_ok=True)
+        Path(folder_saveto).mkdir(parents=True, exist_ok=True)
+        Path(folder_saveto_json).mkdir(parents=True, exist_ok=True)
+        Path(folder_saveto_uncertainty).mkdir(parents=True, exist_ok=True)
+
+        filepaths = glob.glob(f"{folder_path}/*.tif") + glob.glob(f"{folder_path}/*.tiff")
+
+        self.load_model()
 
         for filepath in tqdm(filepaths):
-            filename = os.path.basename(filepath)
-            print(filename)
+           # ensure the filename ends with .tif of tiff
+            filename = Path(filepath).name
 
             image_to_predict = tiff.imread(filepath)
+            if image_to_predict.ndim == 2:
+                image_to_predict = np.expand_dims(image_to_predict, axis=2)
             image_to_predict = image_to_predict.transpose(2, 0, 1)
+            
+            norm_method = self.project_data_dict["dataset"]["normalization_method"]
+            norm_settings = self.project_data_dict["dataset"]["normalization_settings"]
+            norm_settings = fit_normalizer(image_to_predict, norm_method)
+            image_to_predict = transform_image(image_to_predict, norm_settings, norm_method)
+           
 
             predicted_mask, uncertainty = self.predict_image(image_to_predict, labels, show=show)
             tiff.imwrite(f"{folder_saveto}/{filename}", predicted_mask, metadata={'labels': labels})

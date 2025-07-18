@@ -34,7 +34,7 @@ class SCUnet(SegmentationModel):
                 encoder_name: str = "resnet34",
                 encoder_depth: int = 5,
                 encoder_weights: Optional[str] = "imagenet",
-                decoder_use_batchnorm: bool = True,
+                decoder_use_norm: Optional[str] = "batchnorm",
                 decoder_channels: List[int] = (256, 128, 64, 32, 16),
                 decoder_attention_type: Optional[str] = None,
                 in_channels: int = 3,
@@ -56,8 +56,8 @@ class SCUnet(SegmentationModel):
             encoder_channels=self.encoder.out_channels,
             decoder_channels=decoder_channels,
             n_blocks=encoder_depth,
-            use_batchnorm=decoder_use_batchnorm,
-            center=True if encoder_name.startswith("vgg") else False,
+            use_norm=decoder_use_norm,
+            add_center_block=True if encoder_name.startswith("vgg") else False,
             attention_type=decoder_attention_type,
         )
 
@@ -83,7 +83,8 @@ class SCUnet(SegmentationModel):
     def forward(self, x):
         """Sequentially pass `x` trough model`s encoder, decoder and heads"""
         features = self.encoder(x)
-        decoder_output = self.decoder(*features)
+
+        decoder_output = self.decoder(features)
 
         masks = self.segmentation_head(decoder_output)
 
