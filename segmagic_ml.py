@@ -43,7 +43,9 @@ class Segmagic():
             "spe":len(data.train_dl),
             "num_epochs": epochs,
             "labels":data.labels,
-            "model_path":self.model_path
+            "model_path":self.model_path,
+            "loss_name": self.project_data_dict["training"]["loss_name"],
+            "loss_params": self.project_data_dict["training"]["loss_params"],
         }
 
         self.model = Model(

@@ -4,6 +4,8 @@ from TorchMetricLogger import TorchMetricLogger as TML
 from TorchMetricLogger import TmlMean, TmlDice, TmlF1
 import wandb
 from model.single_channel_model import SCUnet
+from model.losses import get_loss_function
+from segmentation_models_pytorch import Segformer
 import torch
 from torch import nn
 import torchvision
@@ -20,13 +22,15 @@ class Model(lit.LightningModule):
             spe=100, 
             num_epochs=100, 
             labels=['cell'], 
-            model_path=['model/best_model.pth'], 
+            model_path=['model/best_model.pth'],
+            loss_name="focal",
+            loss_params=None,
             wandb_log=False, 
             project=None, 
             entity=None
     ):
         super().__init__()
-        self.model = SCUnet(**model_params)
+        self.model = Segformer(**model_params)
         self.steps_per_epoch = spe
         self.num_epochs = num_epochs
         self.best_valid_f1 = 0
@@ -34,20 +38,11 @@ class Model(lit.LightningModule):
         self.labels = labels
         self.model_path = model_path
 
-        losses = {
-            "bce": torch.nn.BCEWithLogitsLoss(),
-            "focal": smp.losses.FocalLoss(
-                mode="multilabel",
-                gamma=2,
-                alpha=0.75,
-                reduction="sum",
-                reduced_threshold = 0.2
-            ),
-            "weighted_focal": WeightedFocalLoss(),
-        }
+        # Initialize loss function using the factory
+        if loss_params is None:
+            loss_params = {}
+        self.loss = get_loss_function(loss_name, loss_params)
         
-        self.loss = losses["weighted_focal"]
-        # self.loss = losses["shit_loss"]
         self.n_epochs = n_epochs
         self.lr = lr
         if wandb_log:
@@ -63,7 +58,7 @@ class Model(lit.LightningModule):
         x, y, w = batch
         
         y_hat = self(x).contiguous()
-        loss = self.loss(y_hat, y, w)
+        loss = self.loss(y_hat, y)
         p = y_hat.view([y.shape[0], 4, -1]).sigmoid().cpu().detach().numpy()
         l = y.view([y.shape[0], 4, -1]).cpu().detach().numpy()
         return loss, p, l
@@ -97,8 +92,9 @@ class Model(lit.LightningModule):
         return loss
     
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-1)
-        
+        from ranger import Ranger  
+        # opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-1)
+        opt = Ranger(self.parameters(), lr=self.lr, weight_decay=1e-2)
         # FIXME: put this into the toml file
         if False:
             sched = torch.optim.lr_scheduler.OneCycleLR(
@@ -136,34 +132,3 @@ class Model(lit.LightningModule):
             torch.save(self.model, self.model_path)
             result_df = pd.DataFrame.from_dict(result, orient='index')
             result_df.to_excel(self.model_path[:-3]+'xlsx')
-
-
-class ComboLoss(nn.Module):
-    def __init__(self, loss_a, loss_b):
-        super().__init__()
-        self.loss_a = loss_a
-        self.loss_b = loss_b
-    
-    def forward(self, x, y): 
-        return self.loss_a(x, y) + self.loss_b(x, y)    
-
-class WeightedFocalLoss(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.focal_loss = smp.losses.FocalLoss(
-                mode="multilabel",
-                gamma=2,
-                alpha=0.75,
-                reduction=None,
-                reduced_threshold = 0.2
-            )
-
-    def forward(self, x, y, weights):
-        # apply blur to the outline
-
-        focal_loss = self.focal_loss(x, y)
-        
-        # apply weights
-        focal_loss = focal_loss * weights.flatten()
-
-        return focal_loss.sum()
