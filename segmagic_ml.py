@@ -145,7 +145,7 @@ class Segmagic():
         normalized_img = np.pad(img, ((0,0), (int(y_padding/2), math.ceil(y_padding/2)), (int(x_padding/2), math.ceil(x_padding/2))), mode="edge")
 
         # normalize image
-        normalized_img = (normalized_img - 0.5) / 0.5
+        normalized_img = (normalized_img - 0.5) / 0.25
 
         pbar = tqdm(total=x_steps * y_steps)
         with torch.no_grad():

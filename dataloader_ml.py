@@ -24,7 +24,7 @@ class DataHandler():
                 width=self.project_data_dict["dataset"]["kernel_size"],
                 p=1.0
             ),
-            A.Normalize(mean=(0.5,), std=(0.5,), p=1.0, max_pixel_value=1.0),
+            A.Normalize(mean=(0.5,), std=(0.25,), p=1.0, max_pixel_value=1.0),
         ])
         
         self.augmentations = A.Compose([
@@ -48,7 +48,7 @@ class DataHandler():
                 p=0.25),
             A.CLAHE(clip_limit=(1.0, 4.0), p=0.25),
             A.GridDistortion(num_steps=5, distort_limit=[-0.5, 0.5], interpolation=1, border_mode=4, p=0.5),
-            # A.PixelDropout(p=1, per_channel=True),
+            A.PixelDropout(p=1, per_channel=True),
             A.CenterCrop(
                 height=self.project_data_dict["dataset"]["kernel_size"],
                 width=self.project_data_dict["dataset"]["kernel_size"],

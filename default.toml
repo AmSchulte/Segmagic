@@ -25,15 +25,15 @@ normalization_settings = {}  # Settings for normalization
 
 [model]
 # list of available encoders: https://segmentation-modelspytorch.readthedocs.io/en/latest/#encoders
-encoder = "efficientnet-b3"
+encoder = "efficientnet-b5"
 # list of available decoders: https://segmentation-modelspytorch.readthedocs.io/en/latest/#architectures
-architecture = "unet"
+architecture = "segformer"
 
 [model.architecture_params]
 # Pretrained weights for the encoder
 encoder_weights = "imagenet"  
 # Type of attention mechanism in the decoder
-decoder_attention_type = "scse"  
+decoder_attention_type = "None"  
 # Activation function for the output layer
 activation = "None"  
 # Interpolation method for upsampling in the decoder
@@ -44,7 +44,7 @@ classes = 1
 [training]
 loss_name = "dice_bce"
 epochs = 100  # Number of training epochs
-lr = 0.0004  # Learning rate for the optimizer
+lr = 0.0008  # Learning rate for the optimizer
 optimizer_name = "adamw"
 
 [training.optimizer_params]
@@ -62,7 +62,7 @@ drop_last = true  # Drop the last incomplete batch
 persistent_workers = true  # Keep data loading workers alive
 
 [validation.dataloader]
-batch_size = 20  # Number of samples per batch
+batch_size = 10  # Number of samples per batch
 num_workers = 4  # Number of workers for data loading
 pin_memory = true  # Pin memory for faster data transfer to GPU
 drop_last = true  # Drop the last incomplete batch

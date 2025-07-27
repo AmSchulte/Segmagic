@@ -234,6 +234,7 @@ class TrainImage():
         # Find positive mask positions (any channel with True values)
         # Combine all mask channels to find any positive area
 
+        # foreground sampling analog to nnunet
         if random.randint(0, 100) < 12:
             x = np.random.randint(region['x'], region['x']+region['w']-width)
             y = np.random.randint(region['y'], region['y']+region['h']-height)

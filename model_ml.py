@@ -9,21 +9,6 @@ from tqdm import tqdm
 import pandas as pd
 
 
-"""
-model_params,
-            n_epochs=10, 
-            lr=1e-4, 
-            spe=100, 
-            num_epochs=100, 
-            labels=['cell'], 
-            model_path=['model/best_model.pth'],
-            loss_name="focal",
-            loss_params=None,
-            wandb_log=False, 
-            project=None, 
-            entity=None,
-            architecture='unet'
-    """
 class Model(lit.LightningModule):
     def __init__(
             self, 
@@ -149,6 +134,9 @@ class Model(lit.LightningModule):
         elif name.lower() == "scunet":
             from model.single_channel_model import SCUnet
             return SCUnet
+        elif name.lower() == "manet":
+            from segmentation_models_pytorch import MAnet
+            return MAnet
         else:
             raise ValueError(f"Unknown architecture: {name}. Supported architectures are: 'segformer', 'unet', 'scunet'.")
 
