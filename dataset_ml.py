@@ -234,7 +234,7 @@ class TrainImage():
         # Find positive mask positions (any channel with True values)
         # Combine all mask channels to find any positive area
 
-        if random.randint(0, 100) < 25:
+        if random.randint(0, 100) < 12:
             x = np.random.randint(region['x'], region['x']+region['w']-width)
             y = np.random.randint(region['y'], region['y']+region['h']-height)
         else:
@@ -253,8 +253,8 @@ class TrainImage():
                 center_y, center_x = positive_coords[0][idx], positive_coords[1][idx]
                 
                 # Sample around the positive position (within 1/2 width and height)
-                half_width = width * 2
-                half_height = height * 2
+                half_width = width
+                half_height = height
                 
                 # Calculate sampling bounds around the center position
                 min_x = max(region['x'], region['x'] + center_x - half_width)
@@ -269,8 +269,11 @@ class TrainImage():
                     max_y = min_y
                 
                 # Sample position around the positive area
-                x = np.random.randint(min_x, max_x + 1) if max_x >= min_x else min_x
-                y = np.random.randint(min_y, max_y + 1) if max_y >= min_y else min_y
+                # x = np.random.randint(min_x, max_x + 1) if max_x >= min_x else min_x
+                # y = np.random.randint(min_y, max_y + 1) if max_y >= min_y else min_y
+                # use a normal distribution around the center
+                x = int(np.clip(np.random.normal(center_x, half_width / 2), min_x, max_x))
+                y = int(np.clip(np.random.normal(center_y, half_height / 2), min_y, max_y))
 
         return (x, y, width, height), region
 

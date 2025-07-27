@@ -1,0 +1,74 @@
+# Segmagic Configuration File
+# This file contains all configurable parameters for training and inference
+
+[general]
+name = ""  # Project name for logging and organization
+description = ""
+
+[data]
+base_path = ""
+model_folder = "models"  # Folder to save trained models
+
+[dataset]
+labels = ['NF']
+out_classes = ["cell"]
+mode = "brightfield, fluorescence"
+max_signal = 65536
+different_pages = false
+one_channel = true
+downscale = 1
+channels = [0]
+use_regions = false
+kernel_size = 512  # Size of the kernel for image processing
+normalization_method = "loq"  # Method for normalizing images
+normalization_settings = {}  # Settings for normalization
+
+[model]
+# list of available encoders: https://segmentation-modelspytorch.readthedocs.io/en/latest/#encoders
+encoder = "efficientnet-b3"
+# list of available decoders: https://segmentation-modelspytorch.readthedocs.io/en/latest/#architectures
+architecture = "unet"
+
+[model.architecture_params]
+# Pretrained weights for the encoder
+encoder_weights = "imagenet"  
+# Type of attention mechanism in the decoder
+decoder_attention_type = "scse"  
+# Activation function for the output layer
+activation = "None"  
+# Interpolation method for upsampling in the decoder
+decoder_interpolation='nearest'
+in_channels = 1  # Number of input channels (e.g., RGB)
+classes = 1
+
+[training]
+loss_name = "dice_bce"
+epochs = 100  # Number of training epochs
+lr = 0.0004  # Learning rate for the optimizer
+optimizer_name = "adamw"
+
+[training.optimizer_params]
+weight_decay = 1e-2
+
+[training.loss_params]
+dice_weight = 0.6
+bce_weight = 0.4
+
+[training.dataloader]
+batch_size = 10  # Number of samples per batch
+num_workers = 4  # Number of workers for data loading
+pin_memory = true  # Pin memory for faster data transfer to GPU
+drop_last = true  # Drop the last incomplete batch
+persistent_workers = true  # Keep data loading workers alive
+
+[validation.dataloader]
+batch_size = 20  # Number of samples per batch
+num_workers = 4  # Number of workers for data loading
+pin_memory = true  # Pin memory for faster data transfer to GPU
+drop_last = true  # Drop the last incomplete batch
+persistent_workers = true  # Keep data loading workers alive
+
+[wandb_log]
+enabled = true
+project = "segmagic"
+entity = false

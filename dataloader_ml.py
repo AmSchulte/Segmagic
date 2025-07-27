@@ -65,7 +65,7 @@ class DataHandler():
         
         pbar = tqdm(total=len(self.positions), desc='Loading data')
         for pos in self.positions:
-            data = project_data_dict.copy()
+            data = project_data_dict.to_dict()
             pbar.set_description(f'Loading data for {pos}')
             # get corresponding paths
             data_dir = pos / "server.json"
@@ -108,20 +108,30 @@ class DataHandler():
         with open("inference_data.pkl", "wb") as td:
             pickle.dump(self.inference_data, td)
 
-        self.train_valid_split()
-        
-    
-    def train_valid_split(self, ratio=0.2):
-        self.train_data, self.valid_data = train_test_split(self.training_data, test_size=ratio, random_state=42)
+
+    def train_valid_split(self, ratio=0.2, random=42):
+        self.train_data, self.valid_data = train_test_split(self.training_data, test_size=ratio, random_state=random)
         print('split into training: '+ str(len(self.train_data)) + ', and validation: ' + str(len(self.valid_data)))
     
     def train_test_split(self, test_ratio=0.1, valid_ratio=0.2, random=42):    
-        self.train_val_data, self.test_data = train_test_split(self.training_data, test_size=test_ratio, random_state=42)
+        self.train_val_data, self.test_data = train_test_split(self.training_data, test_size=test_ratio, random_state=random)
         self.train_data, self.valid_data = train_test_split(self.train_val_data, test_size=valid_ratio, random_state=random)
         print('split into training: '+ str(len(self.train_data)) + ', valid: ' + str(len(self.valid_data)) + ', and testing: ' + str(len(self.test_data)))
         print("Training data:")
+        data = {"train": [], "valid": [], "test": []}
+        for i, d in enumerate(self.train_data):
+            print(f"{i}: {d.info_dict['file_id']}")
+            data["train"].append(d.info_dict['file_id'])
+
+        print("Validation data:")
+        for i, d in enumerate(self.valid_data):
+            print(f"{i}: {d.info_dict['file_id']}")
+            data["valid"].append(d.info_dict['file_id'])
+
+        print("Test data:")
         for i, d in enumerate(self.test_data):
             print(f"{i}: {d.info_dict['file_id']}")
+            data["test"].append(d.info_dict['file_id'])
     
     def run_data_loader(self):
         """Create data loaders for training and validation datasets"""

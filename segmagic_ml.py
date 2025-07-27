@@ -17,48 +17,30 @@ from normalize import fit_normalizer, transform_image
 import ttach as tta        
 
 class Segmagic():
-    def __init__(self, project_data_dict):
-        self.project_data_dict = project_data_dict
-        self.model_folder = project_data_dict["data"]["model_folder"]
-        self.kernel_size = self.project_data_dict["dataset"]["kernel_size"]
-        
-        # create model folder if it does not exist
-        Path(self.model_folder).mkdir(parents=True, exist_ok=True)
-        
-        self.model_path = self.model_folder +'/best_model.pth'
+    def __init__(self, settings):
+        self.settings = settings.to_dict()
+        self.model_folder = settings["data"]["model_folder"]
+        self.kernel_size = settings["dataset"]["kernel_size"]
         self.ensemble = False
     
-    def train_model(self, data, encoder_name="efficientnet-b5", epochs=100, lr=3e-4, wandb_log=False, project=None, entity=None):
+    def train_model(self, data):        
 
-        model_params = {
-            "encoder_name":encoder_name, 
-            "in_channels":len(data.train_data[0].in_channels), 
-            "classes":len(data.labels),
-            "activation":None
-        }
-        
         training_params = {
-            "n_epochs": epochs,
-            "lr": lr, 
-            "spe":len(data.train_dl),
-            "num_epochs": epochs,
             "labels":data.labels,
-            "model_path":self.model_path,
-            "loss_name": self.project_data_dict["training"]["loss_name"],
-            "loss_params": self.project_data_dict["training"]["loss_params"],
+            "model_path": self.settings["data"]["model_folder"] + '/best_model.pth',
+            "in_channels":len(data.train_data[0].in_channels),
+            "classes":len(data.labels),
+            "spe": len(data.train_dl),
+            **self.settings
         }
 
         self.model = Model(
-            model_params,
-            **training_params,
-            wandb_log=wandb_log, 
-            project=project, 
-            entity=entity
+            training_params
         )
 
         trainer = lit.Trainer(
             accelerator="auto",
-            max_epochs=training_params["n_epochs"], 
+            max_epochs=self.settings["training"]["epochs"], 
             precision="16-mixed",
             # see if gradient clipping of 4 is better
             gradient_clip_val=1.0,
@@ -328,8 +310,8 @@ class Segmagic():
                 image_to_predict = np.expand_dims(image_to_predict, axis=2)
             image_to_predict = image_to_predict.transpose(2, 0, 1)
             
-            norm_method = self.project_data_dict["dataset"]["normalization_method"]
-            norm_settings = self.project_data_dict["dataset"]["normalization_settings"]
+            norm_method = self.settings["dataset"]["normalization_method"]
+            norm_settings = self.settings["dataset"]["normalization_settings"]
             norm_settings = fit_normalizer(image_to_predict, norm_method)
             image_to_predict = transform_image(image_to_predict, norm_settings, norm_method)
 

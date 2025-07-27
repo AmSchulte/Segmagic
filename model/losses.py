@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
 from typing import Dict, Any, Optional, Union
-
+import random
 
 class ComboLoss(nn.Module):
     """Combination of two loss functions with optional weighting."""
@@ -43,7 +43,7 @@ class WeightedFocalLoss(nn.Module):
             # Apply weights
             focal_loss = focal_loss * weights.flatten()
         
-        return focal_loss.sum()
+        return focal_loss.mean()
 
 
 class DiceBCELoss(nn.Module):
@@ -99,6 +99,23 @@ class IoULoss(nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return self.iou_loss(x, y)
 
+class AramLoss(nn.Module):
+    """
+    ARAM Loss: Each forward pass samples a random loss function from the pool.
+    For chaos-loving practitioners. Not for production. Probably.
+    """
+
+    def __init__(self, loss_pool: Optional[list[str]] = None):
+        super().__init__()
+        self.loss_pool = loss_pool or [
+            "bce", "dice", "focal", "weighted_focal",
+            "dice_bce", "tversky", "lovasz", "iou"
+        ]
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        loss_name = random.choice(self.loss_pool)
+        loss_fn = get_loss_function(loss_name)
+        return loss_fn(x, y)
 
 def get_loss_function(loss_name: str, loss_params: Optional[Dict[str, Any]] = None) -> nn.Module:
     """
@@ -137,7 +154,7 @@ def get_loss_function(loss_name: str, loss_params: Optional[Dict[str, Any]] = No
             mode=params.get("mode", "multilabel"),
             gamma=params.get("gamma", 2.0),
             alpha=params.get("alpha", 0.75),
-            reduction=params.get("reduction", "sum"),
+            reduction=params.get("reduction", "mean"),
             reduced_threshold=params.get("reduced_threshold", 0.2)
         ),
         
@@ -170,7 +187,9 @@ def get_loss_function(loss_name: str, loss_params: Optional[Dict[str, Any]] = No
             loss_b=get_loss_function(params["loss_b"], params.get("loss_b_params", {})),
             weight_a=params.get("weight_a", 1.0),
             weight_b=params.get("weight_b", 1.0)
-        )
+        ),
+
+        "aram": lambda params: AramLoss(loss_pool=params.get("loss_pool", None))
     }
     
     if loss_name not in loss_registry:
@@ -207,5 +226,6 @@ __all__ = [
     'IoULoss',
     'get_loss_function',
     'get_dice_bce_loss',
-    'get_focal_dice_loss'
+    'get_focal_dice_loss',
+    'AramLoss'
 ]

@@ -3,20 +3,14 @@ import segmentation_models_pytorch as smp
 from TorchMetricLogger import TorchMetricLogger as TML
 from TorchMetricLogger import TmlMean, TmlDice, TmlF1
 import wandb
-from model.single_channel_model import SCUnet
 from model.losses import get_loss_function
-from segmentation_models_pytorch import Segformer
 import torch
-from torch import nn
-import torchvision
 from tqdm import tqdm
 import pandas as pd
 
 
-class Model(lit.LightningModule):
-    def __init__(
-            self, 
-            model_params, 
+"""
+model_params,
             n_epochs=10, 
             lr=1e-4, 
             spe=100, 
@@ -27,26 +21,38 @@ class Model(lit.LightningModule):
             loss_params=None,
             wandb_log=False, 
             project=None, 
-            entity=None
+            entity=None,
+            architecture='unet'
+    """
+class Model(lit.LightningModule):
+    def __init__(
+            self, 
+            settings
     ):
         super().__init__()
-        self.model = Segformer(**model_params)
-        self.steps_per_epoch = spe
-        self.num_epochs = num_epochs
+        self.model = self.get_architecture(settings["model"]["architecture"])(**settings["model"]["architecture_params"])
+        
+        self.steps_per_epoch = settings["spe"]
+        self.num_epochs = settings["training"]["epochs"]
         self.best_valid_f1 = 0
         self.epoch_count = 0
-        self.labels = labels
-        self.model_path = model_path
+        self.labels = settings["labels"]
+        self.model_path = settings["model_path"]
+        self.settings = settings
 
         # Initialize loss function using the factory
-        if loss_params is None:
-            loss_params = {}
-        self.loss = get_loss_function(loss_name, loss_params)
-        
-        self.n_epochs = n_epochs
-        self.lr = lr
-        if wandb_log:
-            wandb.init(project=project, entity=entity)
+        self.loss = get_loss_function(
+            settings["training"]["loss_name"],
+            settings["training"]["loss_params"] if "loss_params" in settings["training"] else None
+        )
+
+        self.lr = settings["training"]["lr"]
+        if settings["wandb_log"]["enabled"]:
+            wandb.init(
+                project=settings["wandb_log"]["project"], 
+                entity=settings["wandb_log"]["entity"] if settings["wandb_log"]["entity"] else None
+            )
+            wandb.config.update(settings)
             self.tml = TML(log_function=wandb.log)
         else:
             self.tml = TML()
@@ -92,9 +98,16 @@ class Model(lit.LightningModule):
         return loss
     
     def configure_optimizers(self):
-        from ranger import Ranger  
-        # opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-1)
-        opt = Ranger(self.parameters(), lr=self.lr, weight_decay=1e-2)
+        from model.optimizers import get_optimizer
+
+        # With custom parameters
+        opt = get_optimizer(
+            self.settings["training"]["optimizer_name"],
+            self.parameters(), 
+            lr=self.settings["training"]["lr"],
+            optimizer_params=self.settings["training"]["optimizer_params"] if "optimizer_params" in self.settings["training"] else None
+        )
+        
         # FIXME: put this into the toml file
         if False:
             sched = torch.optim.lr_scheduler.OneCycleLR(
@@ -106,7 +119,7 @@ class Model(lit.LightningModule):
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt,
             T_max=self.steps_per_epoch * self.num_epochs,
-            eta_min=self.lr / 10_000
+            eta_min=self.lr / 1e5
         )
 
         return {
@@ -119,6 +132,25 @@ class Model(lit.LightningModule):
                 # multiple of "trainer.check_val_every_n_epoch".
             }
         }
+    
+    def get_architecture(self, name):
+        """
+        Get the architecture of the model.
+        
+        Returns:
+            The architecture of the model as a string
+        """
+        if name.lower() == "segformer":
+            from segmentation_models_pytorch import Segformer
+            return Segformer
+        elif name.lower() == "unet":
+            from segmentation_models_pytorch import Unet
+            return Unet
+        elif name.lower() == "scunet":
+            from model.single_channel_model import SCUnet
+            return SCUnet
+        else:
+            raise ValueError(f"Unknown architecture: {name}. Supported architectures are: 'segformer', 'unet', 'scunet'.")
 
     def on_train_epoch_end(self):
         result = self.tml.on_batch_end()
