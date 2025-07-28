@@ -6,7 +6,7 @@ name = "NFmouse_Segmagic"  # Project name for logging and organization
 description = "Neurofilament segmentation in mouse tissue"
 
 [data]
-base_path = "../NFmouse_Segmagic"
+base_path = "L:/Robert Blum/GPU PC Backup/Annotations/NF_mouse/Segmagic"
 
 [dataset]
 labels = ['NF']
@@ -16,3 +16,6 @@ different_pages = false
 one_channel = true
 channels = [0]
 use_regions = false
+
+[training]
+epochs = 50

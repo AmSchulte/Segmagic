@@ -22,12 +22,13 @@ class Segmagic():
         self.model_folder = settings["data"]["model_folder"]
         self.kernel_size = settings["dataset"]["kernel_size"]
         self.ensemble = False
+        self.model_name = '/best_model.pth'
     
     def train_model(self, data):        
 
         training_params = {
             "labels":data.labels,
-            "model_path": self.settings["data"]["model_folder"] + '/best_model.pth',
+            "model_path": self.settings["data"]["model_folder"] + self.model_name,
             "in_channels":len(data.train_data[0].in_channels),
             "classes":len(data.labels),
             "spe": len(data.train_dl),
@@ -51,13 +52,13 @@ class Segmagic():
             data.train_dl, data.valid_dl
         )
 
-    def train_model_ensemble(self, model_n, data, encoder_name="efficientnet-b5", epochs=50, lr=3e-4, wandb_log=False, project=None, entity=None):
+    def train_model_ensemble(self, model_n, data):
         for i in range(model_n):
             data.train_test_split(test_ratio=0.1, valid_ratio=0.2, random=None)
             # kernel_size and batch_size can be adjusted
             data.run_data_loader()
-            self.model_path = self.model_folder +f'/SCUnet_model_{str(i)}.pth'
-            self.train_model(data, encoder_name=encoder_name, epochs=epochs, lr=lr, wandb_log=wandb_log, project=project, entity=entity)
+            self.model_name = f'/SCUnet_model_{str(i)}.pth'
+            self.train_model(data)
 
         
     def load_model(self):

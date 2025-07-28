@@ -114,7 +114,7 @@ class DataHandler():
         print('split into training: '+ str(len(self.train_data)) + ', and validation: ' + str(len(self.valid_data)))
     
     def train_test_split(self, test_ratio=0.1, valid_ratio=0.2, random=42):    
-        self.train_val_data, self.test_data = train_test_split(self.training_data, test_size=test_ratio, random_state=random)
+        self.train_val_data, self.test_data = train_test_split(self.training_data, test_size=test_ratio, random_state=42)
         self.train_data, self.valid_data = train_test_split(self.train_val_data, test_size=valid_ratio, random_state=random)
         print('split into training: '+ str(len(self.train_data)) + ', valid: ' + str(len(self.valid_data)) + ', and testing: ' + str(len(self.test_data)))
         print("Training data:")
