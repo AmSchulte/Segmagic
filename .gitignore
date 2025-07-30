@@ -8,3 +8,4 @@ wandb
 *.pth
 *.xlsx
 /models/
+*.toml

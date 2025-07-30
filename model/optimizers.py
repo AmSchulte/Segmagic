@@ -74,7 +74,7 @@ def get_optimizer(optimizer_name: str, parameters, lr: float = 1e-3, optimizer_p
     
     elif optimizer_name == "sophia":
         try:
-            from sophia import SophiaG
+            from model.sophia import SophiaG
         except ImportError:
             raise ImportError(
                 "Sophia optimizer not found. Please install it with: pip install sophia-opt"

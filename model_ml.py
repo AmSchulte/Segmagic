@@ -17,6 +17,14 @@ class Model(lit.LightningModule):
         super().__init__()
         self.model = self.get_architecture(settings["model"]["architecture"])(**settings["model"]["architecture_params"])
         
+        # replace the segmentation head with a custom one
+        from model.blocks.heads import SegmentationHead
+        self.model.segmentation_head = SegmentationHead(
+            settings["model"]["architecture_params"]["decoder_channels"][-1], 
+            settings["model"]["architecture_params"]["classes"],
+            activation=settings["model"]["architecture_params"]["activation"],
+        )
+        
         self.steps_per_epoch = settings["spe"]
         self.num_epochs = settings["training"]["epochs"]
         self.best_valid_f1 = 0
@@ -104,7 +112,7 @@ class Model(lit.LightningModule):
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt,
             T_max=self.steps_per_epoch * self.num_epochs,
-            eta_min=self.lr / 1e5
+            eta_min=self.lr / 1e3
         )
 
         return {
@@ -126,7 +134,9 @@ class Model(lit.LightningModule):
             The architecture of the model as a string
         """
         if name.lower() == "segformer":
-            from segmentation_models_pytorch import Segformer
+            #from segmentation_models_pytorch import Segformer
+            # add 0.1 dropout to the Segformer
+            from model.blocks.decoders.segformer.model import Segformer
             return Segformer
         elif name.lower() == "unet":
             from segmentation_models_pytorch import Unet
@@ -137,6 +147,21 @@ class Model(lit.LightningModule):
         elif name.lower() == "manet":
             from segmentation_models_pytorch import MAnet
             return MAnet
+        elif name.lower() == "unetplusplus":
+            from segmentation_models_pytorch import UnetPlusPlus
+            return UnetPlusPlus
+        elif name.lower() == "linknet":
+            from segmentation_models_pytorch import Linknet
+            return Linknet
+        elif name.lower() == "fpn":
+            from segmentation_models_pytorch import FPN
+            return FPN
+        elif name.lower() == "pspnet":
+            from segmentation_models_pytorch import PSPNet
+            return PSPNet
+        elif name.lower() == "deeplabv3plus":
+            from segmentation_models_pytorch import DeepLabV3Plus
+            return DeepLabV3Plus    
         else:
             raise ValueError(f"Unknown architecture: {name}. Supported architectures are: 'segformer', 'unet', 'scunet'.")
 
