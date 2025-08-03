@@ -20,8 +20,7 @@ class Model(lit.LightningModule):
         self.deep_supervision = settings["model"]["architecture_params"].get("deep_supervision", False)
         self.deep_supervision_weight = settings["model"]["architecture_params"].get("deep_supervision_weight", 0.5)
         
-        self.model = self.
-        (settings["model"]["architecture"])(**settings["model"]["architecture_params"])
+        self.model = self.get_architecture(settings["model"]["architecture"])(**settings["model"]["architecture_params"])
         
         # replace the segmentation head with a custom one
         from model.blocks.heads import SegmentationHead, DeepSupervisionHead
