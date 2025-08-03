@@ -44,7 +44,7 @@ class Segmagic():
             max_epochs=self.settings["training"]["epochs"], 
             precision="16-mixed",
             # see if gradient clipping of 4 is better
-            gradient_clip_val=1.0,
+            # gradient_clip_val=1.0,
         )
 
         trainer.fit(
@@ -109,11 +109,20 @@ class Segmagic():
         return self.gaussian_kernel(self.kernel_size, sigma=self.kernel_size/8)
 
     def predict_image(self, image_to_predict, labels, threshold=0.5, show=False):
+
+
         if self.ensemble:
+            for model in self.models:
+                model.eval()
+                model.cuda()
+                model.deep_supervision = False
             print(f"Using ensemble of {len(self.models)} models for prediction")
             tta_models = [tta.SegmentationTTAWrapper(model, tta.aliases.d4_transform(), merge_mode='mean') for model in self.models]
         else:
             print(f"Using single model for prediction")
+            self.model.eval()
+            self.model.cuda()
+            self.model.deep_supervision = False
             tta_models = [tta.SegmentationTTAWrapper(self.model, tta.aliases.d4_transform(), merge_mode='mean')]
 
         STEP_SCALE = 0.5
