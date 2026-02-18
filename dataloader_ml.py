@@ -16,6 +16,8 @@ class DataHandler():
         self.training_data = []
         self.inference_data = []
         self.base_path = project_data_dict["data"]["base_path"]
+        self.image_folder = self.base_path + "/" +  project_data_dict["data"]["image_folder"]
+        self.annotation_folder = self.base_path + "/" + project_data_dict["data"]["annotation_folder"]
         self.labels = project_data_dict["dataset"]["labels"]
 
         self.transformations = A.Compose([
@@ -28,8 +30,11 @@ class DataHandler():
         ])
         
         self.augmentations = A.Compose([
+            # change 3
             A.SquareSymmetry(p=1.0),
-            A.RandomRotate90(p=0.5),
+            A.RandomRotate90(p=0.25),
+            
+            # change 4
             A.Affine(
                 scale=(0.8, 1.2),      # Zoom in/out by 80-120%
                 rotate=(-15, 15),      # Rotate by -15 to +15 degrees
@@ -37,8 +42,11 @@ class DataHandler():
                 shear=(-10, 10),          # Optional: shear by -10 to +10 degrees
                 p=0.7
             ),
-            A.CoarseDropout(num_holes_range=[1,8], hole_height_range=[1,32], hole_width_range=[1,32], p=0.5),
-            A.GaussNoise(std_range=(0.005, 0.01), p=0.125),
+
+            # # change 5
+            # A.CoarseDropout(num_holes_range=[1,8], hole_height_range=[16,128], hole_width_range=[16,128], p=0.5),
+            # # change 6
+            # A.GaussNoise(std_range=(0.005, 0.01), p=0.125),
             A.RandomBrightnessContrast(
                 brightness_limit=0.2,
                 contrast_limit=0.2,
@@ -46,9 +54,11 @@ class DataHandler():
             A.RandomGamma(
                 gamma_limit=(80, 120),
                 p=0.25),
-            A.CLAHE(clip_limit=(1.0, 4.0), p=0.25),
+            # A.CLAHE(clip_limit=(1.0, 4.0), p=0.25),
+            
+            # change 7
             A.GridDistortion(num_steps=5, distort_limit=[-0.5, 0.5], interpolation=1, border_mode=4, p=0.5),
-            A.PixelDropout(p=1, per_channel=True),
+            
             A.CenterCrop(
                 height=self.project_data_dict["dataset"]["kernel_size"],
                 width=self.project_data_dict["dataset"]["kernel_size"],
@@ -81,12 +91,12 @@ class DataHandler():
             data["image_name"] = file_id
             
             #open corresponding geojson file
-            _file = f"{self.base_path}/Annotations/{file_id}.geojson"
+            _file = f"{self.annotation_folder}/{file_id}.geojson"
             with open(_file) as f:
                 data_geo = json.load(f)
             data["features"] = data_geo["features"]
             
-            image_path = f"{self.base_path}\\Images\\{data['file_id']}"
+            image_path = f"{self.image_folder}/{data['file_id']}"
                 
             if len(data["features"]) > 0:
                 data["path"] = image_path

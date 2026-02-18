@@ -1,0 +1,31 @@
+# Segmagic Configuration File
+# This file contains all configurable parameters for training and inference
+
+[general]
+name = "Xenium_Segmagic"  # Project name for logging and organization
+description = "Segmentation in mouse DRG tissue"
+
+[data]
+base_path = "S:/NL/all/AG Blum/Annemarie/Xenium/Annotation"
+
+[dataset]
+labels = ['Neuron', 'SGC', 'Endothel']
+out_classes = ['Neuron', 'SGC', 'Endothel']
+max_signal = 65536
+different_pages = false
+one_channel = false
+channels = [ "DAPI",
+          "ATP1A1/CD45/E-Cadherin",
+           "18S",
+          "alphaSMA/Vimentin",
+          "DAPI",
+          "CD31",
+          "FABP7"]
+use_regions = true
+
+[training]
+epochs = 50
+
+[model.architecture_params]
+in_channels = 7
+classes = 3

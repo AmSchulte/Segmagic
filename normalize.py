@@ -634,3 +634,28 @@ def transform_image(image: np.ndarray, settings: Dict[str, Any],
     """
     normalizer = NormalizerFactory.create_normalizer(method)
     return normalizer.transform(image, settings)
+
+
+def load_and_normalize_tiff(image_path: str, norm_method: str = 'loq') -> np.ndarray:
+    """
+    Load a TIFF image, ensure (C, H, W) layout, and apply normalization.
+
+    Args:
+        image_path: Path to the TIFF file.
+        norm_method: Normalization method string (e.g. 'loq', 'q5_q95').
+
+    Returns:
+        Normalized image as float32 with shape (C, H, W).
+    """
+    import tifffile as tiff
+
+    image = tiff.imread(image_path)
+    if image.ndim == 2:
+        image = np.expand_dims(image, axis=0)  # (H, W) -> (1, H, W)
+    elif image.ndim == 3 and image.shape[0] > image.shape[2]:
+        # Likely (H, W, C) -> (C, H, W)
+        image = image.transpose(2, 0, 1)
+
+    norm_settings = fit_normalizer(image, norm_method)
+    image = transform_image(image, norm_settings, norm_method)
+    return image

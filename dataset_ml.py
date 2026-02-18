@@ -120,9 +120,12 @@ class TrainImage():
             if self.info_dict["dataset"]["different_pages"]:
                 # if labels correspond to each image channel
                 image = tif.asarray().transpose(2, 0, 1)
+            elif self.info_dict["dataset"]["one_channel"]==False:
+                image = tif.asarray()
             else:
                 # if just one image channel or RGB
                 image = tif.asarray().transpose(2, 0, 1)
+            
 
         # downscale if needed
         if self.info_dict["dataset"]["downscale"] > 1:
@@ -145,6 +148,8 @@ class TrainImage():
             if self.info_dict["dataset"]["different_pages"]:
                 for i, c in enumerate(self.labels):
                     region["image"][i, :, :] = tif.asarray()[i,:,:][region['y']:region['y']+region['h'], region['x']:region['x']+region['w']]
+            elif self.info_dict["dataset"]["one_channel"]==False:
+                region["image"] = tif.asarray()[:,region['y']:region['y'] + region['h'], region['x']:region['x'] + region['w']]
             # if just one image channel or RGB
             else:
                 
@@ -152,9 +157,8 @@ class TrainImage():
                 
                 region["image"] = region["image"].transpose(2, 0, 1)
             # check if channels are in the correct order
-            if region["image"].shape[0] != len(self.in_channels):
-                #region["image"] = region["image"].transpose(2, 0, 1)
-                pass
+            
+                
                 
 
         # downscale if needed
@@ -184,48 +188,76 @@ class TrainImage():
         return region
 
     def load_mask(self):
-        # for each region, create a mask        
-        full_mask = np.zeros((len(self.labels), self.image_height, self.image_width), dtype=np.bool_)
-        
-        # print(1, full_mask.shape, self.image_height, self.image_width)
+        # create empty mask
+        full_mask = np.zeros(
+            (len(self.labels), self.image_height, self.image_width),
+            dtype=bool
+        )
+
         for i, c in enumerate(self.labels):
             for poly in self.polygons[c]:
-                if len(poly) == 1:
-                    full_mask[i, :, :] += skimage.draw.polygon2mask(full_mask[i, :, :].shape, [(p[1], p[0]) for p in poly[0]])
-                if len(poly) > 1:
-                    for polym in poly:
-                        full_mask[i, :, :] ^= skimage.draw.polygon2mask(full_mask[i, :, :].shape, [(p[1], p[0]) for p in polym[0]])
-                    # if there are multiple polygons, we need to combine them
-                    # this is the case for example with Multipolygons
-                    # we can use skimage.draw.polygon2mask to create a mask for each polygon
-                    # and then combine them using XOR
 
+                # --------------------------------------
+                # Normalize geometry to list of rings
+                # --------------------------------------
+
+                rings = []
+
+                # Case 1: Polygon → [ [x,y], [x,y], ... ]
+                if isinstance(poly[0][0], (int, float)):
+                    rings = [poly]
+
+                # Case 2: Polygon with holes → [ ring1, ring2, ... ]
+                elif isinstance(poly[0][0][0], (int, float)):
+                    rings = poly
+
+                # Case 3: MultiPolygon → [ polygon1, polygon2, ... ]
                 else:
+                    for polygon in poly:
+                        rings.extend(polygon)
+
+                # --------------------------------------
+                # Draw rings
+                # --------------------------------------
+
+                for ring in rings:
                     try:
-                        
-                        full_mask[i, :, :] += skimage.draw.polygon2mask(full_mask[i, :, :].shape, [(p[1], p[0]) for p in poly[0]])
-                    except ValueError as e:
-                        # no Polygon here, for example does not work with Multipolygons
-                        # maybe implement method here to work with other shapes
-                        print(poly)
-                        raise ValueError from e
-        # make sure the mask is boolean
-        #full_mask = full_mask*1
-                    
+                        mask = skimage.draw.polygon2mask(
+                            full_mask[i].shape,
+                            [(p[1], p[0]) for p in ring]
+                        )
+
+                        # OR is safer than += or XOR for masks
+                        full_mask[i] |= mask
+
+                    except Exception as e:
+                        print("Problematic polygon:", ring)
+                        raise e
+
+        # --------------------------------------
+        # Process regions
+        # --------------------------------------
+
         for region in self.regions:
-            # height, width --> largest x - smallest x, largest y - smallest y
-            
+
             region['x'] = min(p[0] for p in region['coord'])
             region['y'] = min(p[1] for p in region['coord'])
             region['w'] = max(p[0] for p in region['coord']) - region['x']
             region['h'] = max(p[1] for p in region['coord']) - region['y']
-            
-            region["mask"] = full_mask[:, region['y']:region['y']+region['h'], region['x']:region['x'] + region['w']]
-            
-            region["image"] = np.zeros((len(self.in_channels), region['h'], region['w']), dtype=np.int16)
 
-            # load the region
+            region["mask"] = full_mask[
+                :,
+                region['y']:region['y'] + region['h'],
+                region['x']:region['x'] + region['w']
+            ]
+
+            region["image"] = np.zeros(
+                (len(self.in_channels), region['h'], region['w']),
+                dtype=np.int16
+            )
+
             region = self.load_region(region)
+
 
     def sample_position(self, width, height):
         # get a random region

@@ -7,6 +7,8 @@ description = ""
 
 [data]
 base_path = ""
+image_folder = "images/"
+annotation_folder = "annotations/"
 model_folder = "models"  # Folder to save trained models
 
 [dataset]
@@ -25,44 +27,49 @@ normalization_settings = {}  # Settings for normalization
 
 [model]
 # list of available encoders: https://segmentation-modelspytorch.readthedocs.io/en/latest/#encoders
-encoder = "efficientnet-b5"
+
 # list of available decoders: https://segmentation-modelspytorch.readthedocs.io/en/latest/#architectures
-architecture = "segformer"
+architecture = "unet"
 
 [model.architecture_params]
+encoder_name = "efficientnet-b4"
 # Pretrained weights for the encoder
 encoder_weights = "imagenet"  
 # Type of attention mechanism in the decoder
-decoder_attention_type = "None"  
+decoder_attention_type = "scse"  
 # Activation function for the output layer
 activation = "None"  
 # Interpolation method for upsampling in the decoder
 decoder_interpolation='nearest'
+decoder_channels = [256, 128, 64, 32, 32]  # Channels in the decoder
 in_channels = 1  # Number of input channels (e.g., RGB)
 classes = 1
+# Deep supervision settings
+deep_supervision = true  # Enable deep supervision for better gradient flow
+deep_supervision_weight = 0.5  # Weight for auxiliary losses (main loss weight = 1.0 - deep_supervision_weight)
 
 [training]
 loss_name = "dice_bce"
-epochs = 100  # Number of training epochs
-lr = 0.0008  # Learning rate for the optimizer
+epochs = 1  # Number of training epochs
+lr = 0.001  # Learning rate for the optimizer
 optimizer_name = "adamw"
 
 [training.optimizer_params]
-weight_decay = 1e-2
+weight_decay = 1e-5
 
 [training.loss_params]
-dice_weight = 0.6
-bce_weight = 0.4
+dice_weight = 0.5
+bce_weight = 0.5
 
 [training.dataloader]
-batch_size = 10  # Number of samples per batch
+batch_size = 12  # Number of samples per batch
 num_workers = 4  # Number of workers for data loading
 pin_memory = true  # Pin memory for faster data transfer to GPU
 drop_last = true  # Drop the last incomplete batch
 persistent_workers = true  # Keep data loading workers alive
 
 [validation.dataloader]
-batch_size = 10  # Number of samples per batch
+batch_size = 12  # Number of samples per batch
 num_workers = 4  # Number of workers for data loading
 pin_memory = true  # Pin memory for faster data transfer to GPU
 drop_last = true  # Drop the last incomplete batch

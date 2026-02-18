@@ -13,7 +13,7 @@ from shapely.geometry import Polygon
 import shapely
 import geojson
 import pandas as pd
-from normalize import fit_normalizer, transform_image
+from normalize import fit_normalizer, transform_image, load_and_normalize_tiff
 import ttach as tta        
 
 class Segmagic():
@@ -44,7 +44,7 @@ class Segmagic():
             max_epochs=self.settings["training"]["epochs"], 
             precision="16-mixed",
             # see if gradient clipping of 4 is better
-            gradient_clip_val=1.0,
+            # gradient_clip_val=1.0,
         )
 
         trainer.fit(
@@ -67,9 +67,12 @@ class Segmagic():
             self.ensemble = True
             self.models = []
             print(f"Loading models for ensemble")
+
             for filepath in filepaths:
                 
                 if 'SCUnet_model' in filepath:
+                    print(f"Loading model from {filepath}")
+
                     model = torch.load(filepath, weights_only=False)
                     model.eval()
                     model.cuda()
@@ -103,12 +106,23 @@ class Segmagic():
         return kernel_2D
 
     def weight_function(self):
-        return self.gaussian_kernel(self.kernel_size, sigma=self.kernel_size/5)
+        return self.gaussian_kernel(self.kernel_size, sigma=self.kernel_size/8)
 
-    def predict_image(self, image_to_predict, labels, threshold=0.6, show=False):
+    def predict_image(self, image_to_predict, labels, threshold=0.5, show=False):
+
+
         if self.ensemble:
+            for model in self.models:
+                model.eval()
+                model.cuda()
+                model.deep_supervision = False
+            print(f"Using ensemble of {len(self.models)} models for prediction")
             tta_models = [tta.SegmentationTTAWrapper(model, tta.aliases.d4_transform(), merge_mode='mean') for model in self.models]
         else:
+            print(f"Using single model for prediction")
+            self.model.eval()
+            self.model.cuda()
+            self.model.deep_supervision = False
             tta_models = [tta.SegmentationTTAWrapper(self.model, tta.aliases.d4_transform(), merge_mode='mean')]
 
         STEP_SCALE = 0.5
@@ -161,17 +175,13 @@ class Segmagic():
                     
                 
                     img_tile = torch.from_numpy(img_tile).unsqueeze(0)
-                    if self.ensemble:
-                        outputs = []
-                        for model in tta_models:
-                            pred_m = model(img_tile.cuda())
-                            outputs.append(pred_m)
-                            
-                        pred = sum(outputs) / len(outputs)
-                        #_, pred = torch.max(ensemble_output, 1)
-                        
-                    else:
-                        pred = tta_models[0](img_tile.cuda())
+                    
+                    outputs = []
+                    for e, model in enumerate(tta_models):
+                        pred_m = model(img_tile.cuda())
+                        outputs.append(pred_m)
+                    
+                    pred = sum(outputs) / len(outputs)                        
 
                     pred = pred.squeeze(0).sigmoid().cpu().numpy()
                     
@@ -302,19 +312,11 @@ class Segmagic():
 
         self.load_model()
 
-        for filepath in tqdm(filepaths):
-            # ensure the filename ends with .tif of tiff
-            filename = Path(filepath).name
+        norm_method = self.settings["dataset"]["normalization_method"]
 
-            image_to_predict = tiff.imread(filepath)
-            if image_to_predict.ndim == 2:
-                image_to_predict = np.expand_dims(image_to_predict, axis=2)
-            image_to_predict = image_to_predict.transpose(2, 0, 1)
-            
-            norm_method = self.settings["dataset"]["normalization_method"]
-            norm_settings = self.settings["dataset"]["normalization_settings"]
-            norm_settings = fit_normalizer(image_to_predict, norm_method)
-            image_to_predict = transform_image(image_to_predict, norm_settings, norm_method)
+        for filepath in tqdm(filepaths):
+            filename = Path(filepath).name
+            image_to_predict = load_and_normalize_tiff(filepath, norm_method)
 
             predicted_mask, uncertainty = self.predict_image(image_to_predict, labels, show=show)
             tiff.imwrite(f"{folder_saveto}/{filename}", predicted_mask, metadata={'labels': labels})
