@@ -1,9 +1,10 @@
-# Segmagic Configuration File
+ # Segmagic Configuration File
 # This file contains all configurable parameters for training and inference
 
 [general]
 name = "Xenium_Segmagic"  # Project name for logging and organization
 description = "Segmentation in mouse DRG tissue"
+annotation_folder = "Annotations/" 
 
 [data]
 base_path = "S:/NL/all/AG Blum/Annemarie/Xenium/Annotation"
@@ -25,6 +26,9 @@ use_regions = true
 
 [training]
 epochs = 50
+
+[model]
+encoder = "timm/tf_efficientnet_b4.ns_jft_in1k"
 
 [model.architecture_params]
 in_channels = 7
