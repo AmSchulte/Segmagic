@@ -27,7 +27,7 @@ normalization_settings = {}  # Settings for normalization
 
 [model]
 # list of available encoders: https://segmentation-modelspytorch.readthedocs.io/en/latest/#encoders
-
+encoder = "efficientnet-b4"
 # list of available decoders: https://segmentation-modelspytorch.readthedocs.io/en/latest/#architectures
 architecture = "unet"
 
@@ -52,7 +52,7 @@ deep_supervision_weight = 0.5  # Weight for auxiliary losses (main loss weight =
 loss_name = "dice_bce"
 epochs = 1  # Number of training epochs
 lr = 0.001  # Learning rate for the optimizer
-optimizer_name = "adamw"
+optimizer_name = "ranger"
 
 [training.optimizer_params]
 weight_decay = 1e-5

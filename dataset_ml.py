@@ -60,7 +60,7 @@ class TrainImage():
         self.info_dict["metadata"]["normalization_method"] = norm_method
         self.info_dict["metadata"]["normalization_settings"] = norm_settings
     
-
+        self.sample_positions = []
 
         self.polygons = {c: [f['geometry']['coordinates'] for f in self.info_dict['features'] if f['properties']['classification']['name'] == c] for c in self.labels}
         self.load_mask()
@@ -140,7 +140,7 @@ class TrainImage():
 
     def load_region(self, region):
         # try cached region first
-        if l_cached := self.load_region_cache(self.info_dict, region) is not None:
+        if (l_cached := self.load_region_cache(self.info_dict, region)) is not None:
             return l_cached
 
         with tifffile.TiffFile(self.info_dict["path"]) as tif:
@@ -267,51 +267,38 @@ class TrainImage():
         # Combine all mask channels to find any positive area
 
         # foreground sampling analog to nnunet
-        if random.randint(0, 100) < 12:
+        # CHANGE 1: 0 -> 12
+        if random.randint(0, 100) <= 2:
             x = np.random.randint(region['x'], region['x']+region['w']-width)
             y = np.random.randint(region['y'], region['y']+region['h']-height)
+
         else:
-            combined_mask = np.any(region["mask"], axis=0)
+            # get a sample position from the sample_positions
+            x, y = random.choice(region["sample_positions"])
             
-            # Get coordinates of all positive mask positions
-            positive_coords = np.where(combined_mask)
+            # offset to have the mask in the center
+            x = int(x - width / 2)
+            y = int(y - height / 2)
             
-            if len(positive_coords[0]) == 0:
-                # If no positive mask found, fall back to random sampling
-                x = np.random.randint(region['x'], region['x']+region['w']-width)
-                y = np.random.randint(region['y'], region['y']+region['h']-height)
-            else:
-                # Select a random positive position
-                idx = np.random.randint(len(positive_coords[0]))
-                center_y, center_x = positive_coords[0][idx], positive_coords[1][idx]
-                
-                # Sample around the positive position (within 1/2 width and height)
-                half_width = width
-                half_height = height
-                
-                # Calculate sampling bounds around the center position
-                min_x = max(region['x'], region['x'] + center_x - half_width)
-                max_x = min(region['x'] + region['w'] - width, region['x'] + center_x + half_width - width)
-                min_y = max(region['y'], region['y'] + center_y - half_height)
-                max_y = min(region['y'] + region['h'] - height, region['y'] + center_y + half_height - height)
-                
-                # Ensure valid bounds
-                if max_x < min_x:
-                    max_x = min_x
-                if max_y < min_y:
-                    max_y = min_y
-                
-                # Sample position around the positive area
-                # x = np.random.randint(min_x, max_x + 1) if max_x >= min_x else min_x
-                # y = np.random.randint(min_y, max_y + 1) if max_y >= min_y else min_y
-                # use a normal distribution around the center
-                x = int(np.clip(np.random.normal(center_x, half_width / 2), min_x, max_x))
-                y = int(np.clip(np.random.normal(center_y, half_height / 2), min_y, max_y))
+            # add some random offset to the position
+            x_offset = int(np.random.normal(0, width / 8))
+            y_offset = int(np.random.normal(0, height / 8))
+
+            # CHANGE 2
+            x += x_offset
+            y += y_offset
+
+            # make sure we don't go out of bounds
+            x = np.clip(x, 0, region['w'] - width)
+            y = np.clip(y, 0, region['h'] - height)
 
         return (x, y, width, height), region
 
     def pad_if_needed(self, img, h, w):
         # pad to h, w if needed
+        assert img.shape[1] <= h, f"Image height {img.shape[1]} is larger than target height {h}"
+        assert img.shape[2] <= w, f"Image width {img.shape[2]} is larger than target width {w}"
+
         if img.shape[1] < h:
             img = np.pad(img, ((0, 0), (0, h - img.shape[1]), (0, 0)), mode='constant')
 
