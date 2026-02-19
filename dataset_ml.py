@@ -45,7 +45,7 @@ class TrainImage():
         if "width" in info_dict["metadata"]:
             self.image_width = info_dict["metadata"]["width"]
             self.image_height = info_dict["metadata"]["height"]
-        else:
+        if self.info_dict["dataset"]["use_regions"]:
             # use region size
             self.image_width = max(max(p[0] for p in region['coord']) for region in self.regions)
             self.image_height = max(max(p[1] for p in region['coord']) for region in self.regions)
