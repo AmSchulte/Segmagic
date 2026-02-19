@@ -255,12 +255,11 @@ class Segmagic():
         for i in range(len(data.test_data)):
             image_to_predict = data.test_data[i]
             
-            test_image = image_to_predict.load_image(image_to_predict.regions[0], (0,0,image_to_predict.image_height,image_to_predict.image_width))
-            
+            test_image = image_to_predict.load_image(image_to_predict.regions[0], (image_to_predict.regions[0]['x'],image_to_predict.regions[0]['y'],image_to_predict.regions[0]['h'],image_to_predict.regions[0]['w']))
             predicted_mask, uncertainty = self.predict_image(test_image, data.labels, show=False)
             
-            img = image_to_predict.load_image(image_to_predict.regions[0], (0,0,image_to_predict.image_height,image_to_predict.image_width))
-            mask = image_to_predict.get_mask(image_to_predict.regions[0], (0,0,image_to_predict.image_height,image_to_predict.image_width))
+            img = image_to_predict.load_image(image_to_predict.regions[0], (image_to_predict.regions[0]['x'],image_to_predict.regions[0]['y'],image_to_predict.regions[0]['h'],image_to_predict.regions[0]['w']))
+            mask = image_to_predict.get_mask(image_to_predict.regions[0], (image_to_predict.regions[0]['x'],image_to_predict.regions[0]['y'],image_to_predict.regions[0]['h'],image_to_predict.regions[0]['w']))
 
             name = data.test_data[i].info_dict['image_name']
             tiff.imwrite(data.base_path+'/Testing/images/'+ name, img)
@@ -271,6 +270,7 @@ class Segmagic():
             
 
             for label in range(len(data.labels)):
+                print(data.labels[label])
                 results['image_name'].append(name+'_'+data.labels[label])
                 dice = self.get_dice(mask[label,:,:], predicted_mask[..., label])
                 uncertainty_score = np.mean(uncertainty[..., label][predicted_mask[..., label]>0])
@@ -283,11 +283,11 @@ class Segmagic():
                 fig, axs = plt.subplots(1,3, figsize=(15,5))
 
                 axs[0].set_title('Annotation')
-                axs[0].imshow(img[0,:,:], cmap='gray')
+                axs[0].imshow(img[1,:,:], cmap='gray')
                 axs[0].imshow(mask[label,:,:], alpha=0.4, cmap="inferno")
 
                 axs[1].set_title('Prediction Dice: '+str(round(dice,3)))
-                axs[1].imshow(img[0,:,:], cmap='gray')
+                axs[1].imshow(img[1,:,:], cmap='gray')
                 axs[1].imshow(predicted_mask[..., label], alpha=0.4, cmap="inferno")
 
                 axs[2].set_title('Uncertainty: '+str(round(uncertainty_score,3)))
