@@ -60,8 +60,6 @@ class TrainImage():
         self.info_dict["metadata"]["normalization_method"] = norm_method
         self.info_dict["metadata"]["normalization_settings"] = norm_settings
     
-
-
         self.polygons = {c: [f['geometry']['coordinates'] for f in self.info_dict['features'] if f['properties']['classification']['name'] == c] for c in self.labels}
         self.load_mask()
 
@@ -258,6 +256,17 @@ class TrainImage():
 
             region = self.load_region(region)
 
+    def __sample__(self, region, width, height):
+        x = region['x'] 
+        y = region['y']
+
+        if region['w'] > width:
+            x = np.random.randint(region['x'], region['x']+region['w']-width)
+
+        if region['h'] > height:    
+            y = np.random.randint(region['y'], region['y']+region['h']-height)
+
+        return x, y 
 
     def sample_position(self, width, height):
         # get a random region
@@ -268,8 +277,7 @@ class TrainImage():
 
         # foreground sampling analog to nnunet
         if random.randint(0, 100) < 12:
-            x = np.random.randint(region['x'], region['x']+region['w']-width)
-            y = np.random.randint(region['y'], region['y']+region['h']-height)
+            x, y = self.__sample__(region, width, height)
         else:
             combined_mask = np.any(region["mask"], axis=0)
             
@@ -278,8 +286,7 @@ class TrainImage():
             
             if len(positive_coords[0]) == 0:
                 # If no positive mask found, fall back to random sampling
-                x = np.random.randint(region['x'], region['x']+region['w']-width)
-                y = np.random.randint(region['y'], region['y']+region['h']-height)
+                x, y = self.__sample__(region, width, height)
             else:
                 # Select a random positive position
                 idx = np.random.randint(len(positive_coords[0]))

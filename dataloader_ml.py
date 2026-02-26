@@ -159,7 +159,11 @@ class DataHandler():
             num_workers=self.project_data_dict["training"]["dataloader"]["num_workers"],
             pin_memory=self.project_data_dict["training"]["dataloader"]["pin_memory"],
             drop_last=self.project_data_dict["training"]["dataloader"]["drop_last"],
-            persistent_workers=self.project_data_dict["training"]["dataloader"]["persistent_workers"]
+            persistent_workers=
+                self.project_data_dict["training"]["dataloader"]["persistent_workers"] 
+                if 
+                self.project_data_dict["training"]["dataloader"]["num_workers"] > 0
+                else False
         )
         self.valid_dl = DataLoader(
             self.valid_ds, 
@@ -168,7 +172,11 @@ class DataHandler():
             num_workers=self.project_data_dict["validation"]["dataloader"]["num_workers"], 
             pin_memory=self.project_data_dict["validation"]["dataloader"]["pin_memory"], 
             drop_last=self.project_data_dict["validation"]["dataloader"]["drop_last"], 
-            persistent_workers=self.project_data_dict["validation"]["dataloader"]["persistent_workers"]
+            persistent_workers=
+                self.project_data_dict["validation"]["dataloader"]["persistent_workers"] 
+                if 
+                self.project_data_dict["validation"]["dataloader"]["num_workers"] > 0
+                else False
         )
 
     def show_example_batch(self):
