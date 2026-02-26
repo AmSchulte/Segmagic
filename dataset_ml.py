@@ -21,6 +21,7 @@ class TrainImage():
         self.labels = self.info_dict["dataset"]["labels"]
     
         self.in_channels = self.info_dict["dataset"]["channels"]
+        self.region_weights = None
 
         self.regions = []
         
@@ -38,6 +39,7 @@ class TrainImage():
                 "y": None,
                 "w": None,
                 "h": None,
+                "has_positive": None,
             }
             for region in region_coords
         )
@@ -155,9 +157,6 @@ class TrainImage():
                 
                 region["image"] = region["image"].transpose(2, 0, 1)
             # check if channels are in the correct order
-            
-                
-                
 
         # downscale if needed
         if self.info_dict["dataset"]["downscale"] > 1:
@@ -249,6 +248,9 @@ class TrainImage():
                 region['x']:region['x'] + region['w']
             ]
 
+            # check if the region has any positive mask
+            region["has_positive"] = np.any(region["mask"])
+
             region["image"] = np.zeros(
                 (len(self.in_channels), region['h'], region['w']),
                 dtype=np.int16
@@ -267,10 +269,27 @@ class TrainImage():
             y = np.random.randint(region['y'], region['y']+region['h']-height)
 
         return x, y 
+    
+    def _get_region_weights(self):
+        # calculate weights for the region, to be used for sampling
+        # we want to sample more from regions with positive mask, and less from regions without positive mask
+        # we can use the has_positive flag for this
+        region_weights = []
+        for region in self.regions:
+            if region["has_positive"]:
+                # sample more from positive regions
+                region_weights.append(self.info_dict["dataset"]["positive_region_weight"])  
+            else:
+                region_weights.append(self.info_dict["dataset"]["negative_region_weight"])
+
+        self.region_weights = np.array(region_weights) / np.sum(region_weights)
 
     def sample_position(self, width, height):
         # get a random region
-        region = np.random.choice(self.regions)
+        if self.region_weights is None:
+            self._get_region_weights()
+
+        region = np.random.choice(self.regions, p=self.region_weights)
         
         # Find positive mask positions (any channel with True values)
         # Combine all mask channels to find any positive area

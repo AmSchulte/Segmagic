@@ -25,6 +25,9 @@ kernel_size = 512  # Size of the kernel for image processing
 normalization_method = "loq"  # Method for normalizing images
 normalization_settings = {}  # Settings for normalization
 
+positive_region_weight = 1.0  # Weight for positive regions in the data sampling
+negative_region_weight = 0.2  # Weight for negative regions in the data sampling
+
 [model]
 # list of available encoders: https://segmentation-modelspytorch.readthedocs.io/en/latest/#encoders
 
